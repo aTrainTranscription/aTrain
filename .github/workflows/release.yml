@@ -233,7 +233,7 @@ jobs:
     needs: build-windows-msix
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 300
     env:
       # Here rather than on the step: the `secrets` context is not available in
       # a step-level `if`, the `env` one is.
@@ -283,6 +283,10 @@ jobs:
           signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
           github-artifact-id: ${{ needs.build-windows-msix.outputs.artifact-id }}
           wait-for-completion: true
+          # Defaults are 600/300 s; the rc2 run timed out at 10 min while the
+          # request took 13, and 3 GB have to come back down again.
+          wait-for-completion-timeout-in-seconds: 14400
+          download-signed-artifact-timeout-in-seconds: 1800
           output-artifact-directory: artifacts
 
       - name: Generate sha256 checksums

@@ -32,20 +32,26 @@ def download_all_models():
 
 
 def download_model(model_path: Path, model_info: dict, progress: DictProxy | None = None):
+    # http_get is patched module-wide so the byte progress of every file lands
+    # in one bar. It has to be restored afterwards: the pool worker outlives this
+    # call, and the proxy behind the bar dies with the dialog that opened it.
+    original_http_get = file_download.http_get
     if progress:
-        # Monkey patching custom tqdm bar into the huggingface snapshot download
         repo_size = model_info["repo_size"]
         progress["total"] = repo_size
         tqdm_bar = custom_tqdm(total=repo_size, progress=progress)
-        file_download.http_get = partial(file_download.http_get, _tqdm_bar=tqdm_bar)  # ty: ignore
+        file_download.http_get = partial(original_http_get, _tqdm_bar=tqdm_bar)  # ty: ignore
 
-    snapshot_download(
-        repo_id=model_info["repo_id"],
-        revision=model_info["revision"],
-        local_dir=model_path,
-        local_dir_use_symlinks=False,
-        max_workers=1,
-    )
+    try:
+        snapshot_download(
+            repo_id=model_info["repo_id"],
+            revision=model_info["revision"],
+            local_dir=model_path,
+            local_dir_use_symlinks=False,
+            max_workers=1,
+        )
+    finally:
+        file_download.http_get = original_http_get
 
 
 def get_model(model: str, progress: DictProxy | None = None) -> Path:
