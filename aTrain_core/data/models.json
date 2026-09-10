@@ -196,5 +196,26 @@
             "tokenizer.json": "sha256:5ceb4ad41152dcbf89d26884faaa71c04e2f0a12b2d2c88a12894eee1e55c189",
             "vocabulary.json": "sha256:c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
         }
+    },
+    "large-swedish": {
+        "repo_id": "aTrain-core/KB-WhisperSwedish",
+        "revision": "824bf78765b22c7e999ea3ec91629c7169f69bcf",
+        "license": "Apache-2.0",
+        "type": "regular",
+        "languages": [
+            "sv"
+        ],
+        "repo_size": 3092302292,
+        "repo_size_human": "3.09 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+            "README.md": "sha256:ee5e83597858c1e6f6baa808e449bd8e7b9e8052247bf6808ece549652fe7c80",
+            "config.json": "sha256:48be972f94e790720e32b8711ad54860b1d06d5434079d3fcdfdfe1254d29c69",
+            "model.bin": "sha256:69ed56887f68417f651d50fd5f225c60dfc0f9515bef85bb0f1404825c6f01de",
+            "preprocessor_config.json": "sha256:7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+            "tokenizer.json": "sha256:d06d0c877b5143ccdcb761407d5650b18a6afc33f9261fcb7e0dd44acbc1c262",
+            "vocabulary.json": "sha256:c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+        }
     }
 }
