@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX package manifest for aTrain, packed by makeappx.exe in the release
+  workflow. `{{VERSION}}` is substituted at build time from the tag ref
+  (see .github/workflows/release.yml).
+
+  `{{PUBLISHER}}` is substituted from the `SIGNPATH_PUBLISHER` repository
+  variable and must match the subject of the signing certificate exactly,
+  or signing fails. The test and production certificates have different
+  subjects, which is why this is a variable rather than a fixed string.
+  Builds that skip signing get a placeholder. For MS Store distribution
+  the same identity would additionally have to be registered with
+  Microsoft Partner Center.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="aTrainTranscription.aTrain"
+    Publisher="{{PUBLISHER}}"
+    Version="{{VERSION}}.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>aTrain</DisplayName>
+    <PublisherDisplayName>aTrain Transcription</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Offline transcription of speech recordings with speaker diarization.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="10.0.17763.0"
+      MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application
+      Id="aTrain"
+      Executable="aTrain\aTrain.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="aTrain"
+        Description="Offline transcription of speech recordings with speaker diarization."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <Capability Name="internetClient" />
+  </Capabilities>
+</Package>

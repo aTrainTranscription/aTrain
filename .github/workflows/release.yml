@@ -1,0 +1,354 @@
+name: Release
+
+# Tag-triggered Windows MSIX release (#212), Authenticode-signed via
+# SignPath (#211). Builds via PyInstaller + makeappx.exe. The default
+# (slim) build ships no models - they are fetched on first use (#226);
+# `bundle_models` bakes them in. Installers go to Zenodo (#229)
+# and stay available as workflow artifacts, since they exceed the 2 GiB
+# release-asset limit; the GitHub release carries the sha256 checksums
+# and the CycloneDX SBOM (#213) for verification. Flatpak (needs Flathub
+# manifest refresh) and macOS DMG are follow-ups.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      test_version:
+        description: "Version string for test builds (e.g. 0.0.0-test); tag-triggered runs derive this from the tag"
+        required: false
+        default: "0.0.0-test"
+      bundle_models:
+        description: "Bake required models into the MSIX (~4.4 GB instead of ~2.9 GB) - for offline installs and MS Store submissions"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # required for `gh release create`
+  actions: read    # SignPath reads the job and downloads the artifact via the API
+
+env:
+  # Pinned like every other input to the build: a new release of the generator
+  # could otherwise change the SBOM, or break the step, in the middle of a
+  # release. Declared here rather than on the build job so that the Flatpak
+  # (#238) and macOS (#239) jobs inherit one version instead of copying it.
+  CYCLONEDX_BOM: "cyclonedx-bom==7.3.1"
+  CYCLONEDX_LIB: "cyclonedx-python-lib[json-validation]==11.12.0"
+
+jobs:
+  build-windows-msix:
+    name: Build Windows MSIX (unsigned)
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      suffix: ${{ steps.version.outputs.suffix }}
+      # Consumed by the signing step in the publish job.
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    # Build ~13 min, plus ~13 min to push the 2.9 GB installer to Zenodo -
+    # too close to the previous 30 min limit to absorb network variance.
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            version="${{ inputs.test_version }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Bundled builds get a distinct filename + checksums file so both
+          # variants of one version can sit on the same release without
+          # colliding (dispatch runs can target a tag ref).
+          if [[ "${{ inputs.bundle_models }}" == "true" ]]; then
+            echo "suffix=-bundled" >> "$GITHUB_OUTPUT"
+          else
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Resolved version: $version"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install the full app runtime
+        # --no-dev because the dev group (ruff, bandit, pip-audit) has no place
+        # in a release build, and because it would otherwise be inventoried as
+        # part of the shipped application by the SBOM step below.
+        shell: bash
+        run: uv sync --locked --extra gui --no-dev
+
+      - name: Pre-populate required models from Flatpak-hosted tarballs
+        # Optional since #226: without bundled models the app downloads them
+        # to the writable models dir on first run. Bundling stays available
+        # behind the flag for offline installs and MS Store submissions
+        # (tag-triggered runs have no inputs, so they default to slim).
+        # Source: the same sha256-pinned tarballs the Flatpak build uses
+        # (flathub/io.github.juergenfleiss.aTrain), not gated.
+        if: inputs.bundle_models
+        shell: bash
+        run: |
+          mkdir -p aTrain/required_models
+          cd aTrain/required_models
+
+          curl -L --fail --show-error \
+            -o large-v3-turbo.tar.zst \
+            "https://huggingface.co/datasets/aTrain-core/flatpak_required_models_largev3turbo/resolve/main/large-v3-turbo.tar.zst?download=1"
+          echo "b28bd73e580b1955cc9590f271d9ac2d51f1a44f0673931ee6d13ca2945763aa  large-v3-turbo.tar.zst" | sha256sum -c -
+          # windows-latest ships bsdtar which handles .zst natively.
+          tar -xf large-v3-turbo.tar.zst
+          rm large-v3-turbo.tar.zst
+
+          curl -L --fail --show-error \
+            -o speaker-detection.tar.zst \
+            "https://huggingface.co/datasets/aTrain-core/flatpak_requiredmodel_speaker-detection/resolve/main/speaker-detection.tar.zst?download=1"
+          echo "5b992de6a3e337f0e4c581d9003fa8172cf7737578b7883fb9393e536ac8b964  speaker-detection.tar.zst" | sha256sum -c -
+          tar -xf speaker-detection.tar.zst
+          rm speaker-detection.tar.zst
+
+          echo "Populated required_models:"
+          ls -la
+
+      - name: Generate the SBOM
+        # #213. Runs against the venv while it holds exactly the shipped
+        # runtime: after the locked sync, and before PyInstaller is installed
+        # into it.
+        # cyclonedx-bom runs via uvx for the same reason: installed into the
+        # venv it would inventory itself.
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          suffix="${{ steps.version.outputs.suffix }}"
+          # Read the bundled models off the package tree the previous step
+          # built, so the SBOM records what this artifact actually carries
+          # rather than a list repeated here.
+          bundled=""
+          if [[ -d aTrain/required_models ]]; then
+            bundled="$(ls aTrain/required_models | tr '\n' ',' | sed 's/,$//')"
+          fi
+          uvx --from "$CYCLONEDX_BOM" cyclonedx-py environment .venv \
+            --output-format JSON --output-file raw-sbom.json
+          uv run --no-project --with "$CYCLONEDX_LIB" \
+            python .github/scripts/build-sbom.py \
+              --input raw-sbom.json \
+              --output "aTrain-$version$suffix-windows.cdx.json" \
+              --version "$version" \
+              --platform windows \
+              --bundled-models "$bundled" \
+              --validate
+
+      - name: Install PyInstaller
+        shell: bash
+        run: uv pip install pyinstaller
+
+      - name: Build the frozen app with PyInstaller
+        shell: bash
+        run: uv run --no-sync pyinstaller freeze.spec --noconfirm
+
+      - name: Stage MSIX package tree
+        # Copies the PyInstaller output into a staging dir, adds the manifest
+        # (with the version substituted in) and the placeholder Assets.
+        # makeappx.exe expects the root of the package tree to contain
+        # AppxManifest.xml + all referenced files.
+        shell: bash
+        env:
+          # The subject of the signing certificate, which the Publisher has to
+          # match exactly (#211). Read from a variable rather than the shell
+          # substitution below so a name containing quotes cannot break it.
+          PUBLISHER: ${{ vars.SIGNPATH_PUBLISHER }}
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          staging="msix-staging"
+          mkdir -p "$staging"
+          # PyInstaller freeze.spec's COLLECT block emits to dist/aTrain/
+          cp -r dist/aTrain "$staging/aTrain"
+          cp -r packaging/msix/Assets "$staging/Assets"
+          # Substitute {{VERSION}} in the manifest template. MSIX Package
+          # Identity Version must be four dot-separated integers, so
+          # normalize semver-like strings (e.g. "1.5.0" -> "1.5.0.0",
+          # "0.0.0-test" -> "0.0.0.0" for makeappx acceptance).
+          normalized="$(echo "$version" | sed 's/-.*//' | awk -F. '{ while (NF<3) { $(NF+1)=0 }; printf "%d.%d.%d", $1, $2, $3 }')"
+          # Builds that skip signing (forks, no SignPath setup) get a placeholder.
+          publisher="${PUBLISHER:-CN=aTrain unsigned build}"
+          sed -e "s|{{VERSION}}|$normalized|g" -e "s|{{PUBLISHER}}|$publisher|g" \
+            packaging/msix/AppxManifest.xml.template > "$staging/AppxManifest.xml"
+          echo "Manifest:"
+          cat "$staging/AppxManifest.xml"
+
+      - name: Pack MSIX with makeappx.exe
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $output = "aTrain-$version${{ steps.version.outputs.suffix }}.msix"
+          # makeappx.exe ships with the Windows SDK preinstalled on
+          # windows-latest runners; the path can shift between SDK versions
+          # so glob the newest one under the standard install root.
+          $makeappx = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\makeappx.exe" |
+                      Sort-Object -Property FullName -Descending |
+                      Select-Object -First 1
+          if (-not $makeappx) { throw "makeappx.exe not found on runner" }
+          Write-Host "Using $($makeappx.FullName)"
+          & $makeappx.FullName pack /d msix-staging /p $output /o
+          if ($LASTEXITCODE -ne 0) { throw "makeappx failed with exit code $LASTEXITCODE" }
+          Write-Host "Built $output"
+
+      - name: Generate sha256 checksums
+        # Covers everything the workflow artifact carries, the SBOM included -
+        # the release gets its own set, recomputed after the round-trip.
+        shell: bash
+        run: |
+          sha256sum aTrain-*.msix aTrain-*.cdx.json \
+            > "checksums${{ steps.version.outputs.suffix }}.txt"
+          cat "checksums${{ steps.version.outputs.suffix }}.txt"
+
+      - name: Upload MSIX artifact
+        # Always uploaded as workflow artifact - the only GitHub channel
+        # the installers fit in (releases cap assets at 2 GiB).
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: aTrain-msix-${{ steps.version.outputs.version }}${{ steps.version.outputs.suffix }}
+          path: |
+            aTrain-*.msix
+            aTrain-*.cdx.json
+            checksums*.txt
+          if-no-files-found: error
+          # An MSIX is already a zip - re-compressing 2.9 GB buys nothing.
+          compression-level: 0
+
+  publish:
+    name: Publish release artifacts
+    # Fan-in: the build jobs only produce artifacts, everything that talks to
+    # the outside world (GitHub release, Zenodo, signing later) happens here -
+    # once per release, with all artifacts in hand. Adding the EXE (#221) or
+    # Flatpak means adding a build job and listing it in `needs`.
+    needs: build-windows-msix
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      # Here rather than on the step: the `secrets` context is not available in
+      # a step-level `if`, the `env` one is.
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORG_ID: ${{ secrets.SIGNPATH_ORG_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: aTrain-*-${{ needs.build-windows-msix.outputs.version }}${{ needs.build-windows-msix.outputs.suffix }}
+          path: artifacts
+          merge-multiple: true
+
+      - name: Add the source archive
+        # Keeps the record self-contained: the exact sources the installers
+        # were built from live next to them, at the same immutable place.
+        working-directory: artifacts
+        run: |
+          version="${{ needs.build-windows-msix.outputs.version }}"
+          curl -sSL --fail-with-body -o "aTrain-$version-source.tar.gz" \
+            "https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/v$version.tar.gz"
+          ls -la
+
+      - name: Sign the MSIX with SignPath
+        # Authenticode via SignPath (#211). Runs before the checksums and
+        # uploads because signing rewrites the file. The action fetches the
+        # artifact by id and extracts the signed archive over `artifacts/`,
+        # replacing the unsigned MSIX downloaded above. Skipped unless all
+        # five SignPath values are set, so forks and runs without the SignPath
+        # setup still build, just unsigned.
+        if: >-
+          env.SIGNPATH_API_TOKEN != '' && env.SIGNPATH_ORG_ID != '' &&
+          vars.SIGNPATH_PROJECT_SLUG != '' && vars.SIGNPATH_POLICY_SLUG != '' &&
+          vars.SIGNPATH_PUBLISHER != ''
+        uses: SignPath/github-action-submit-signing-request@v2.3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+          # Variables, not secrets: they are identifiers, and switching from the
+          # test certificate to the production one is then a settings change
+          # rather than a code change.
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          github-artifact-id: ${{ needs.build-windows-msix.outputs.artifact-id }}
+          wait-for-completion: true
+          # Defaults are 600/300 s; the rc2 run timed out at 10 min while the
+          # request took 13, and 3 GB have to come back down again.
+          wait-for-completion-timeout-in-seconds: 14400
+          download-signed-artifact-timeout-in-seconds: 1800
+          output-artifact-directory: artifacts
+
+      - name: Generate sha256 checksums
+        # Recomputed over the downloaded files rather than reused from the
+        # build job, so the checksums also cover the artifact round-trip. One
+        # line per file - installers, source archive and SBOMs alike - so a
+        # consumer can verify a single download with
+        # `sha256sum -c checksums.txt --ignore-missing`.
+        working-directory: artifacts
+        run: |
+          checksums="checksums${{ needs.build-windows-msix.outputs.suffix }}.txt"
+          sha256sum aTrain-* > "$checksums"
+          cat "$checksums"
+
+      - name: Attach checksums and SBOMs to the GitHub release
+        # The release is the integrity anchor, not the download channel: the
+        # installers exceed GitHub's 2 GiB per-asset limit, so consumers fetch
+        # them from Zenodo (#229) or the workflow artifact and verify them
+        # against the sha256 published here. The SBOMs (#213) sit next to them,
+        # small enough to read without downloading a 2.9 GB installer first.
+        # Two flows are supported:
+        # - release created via the GitHub UI (creates the tag on publish,
+        #   which triggers this run): upload to the existing release.
+        # - tag pushed by hand: create a draft release so maintainers write
+        #   notes and publish deliberately.
+        working-directory: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ needs.build-windows-msix.outputs.version }}"
+          checksums="checksums${{ needs.build-windows-msix.outputs.suffix }}.txt"
+          if gh release view "v$version" > /dev/null 2>&1; then
+            gh release upload "v$version" "$checksums" aTrain-*.cdx.json --clobber
+          else
+            gh release create "v$version" \
+              --draft \
+              --verify-tag \
+              --title "aTrain v$version" \
+              --generate-notes \
+              "$checksums" aTrain-*.cdx.json
+          fi
+
+      - name: Upload installers to Zenodo (draft)
+        # Zenodo is the download channel for the installers (#229). Creates a
+        # DRAFT only - a maintainer publishes it in the Zenodo UI, which also
+        # submits it to the community. Slim builds only: the bundled variant
+        # is an internal build, not a published release artifact.
+        # The `aTrain-*` glob carries the SBOM into the record as well, so the
+        # archived version stays readable without the GitHub release next to it.
+        # The script is runnable locally, see `zenodo-upload.sh --help`.
+        if: ${{ !inputs.bundle_models }}
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+          # No default on purpose: production vs sandbox is an explicit choice.
+          ZENODO_BASE: ${{ vars.ZENODO_BASE }}
+          # The published record's `conceptrecid`, set once: every later
+          # release is then added as a new version of that record.
+          ZENODO_CONCEPT_ID: ${{ vars.ZENODO_CONCEPT_ID }}
+        run: |
+          if [[ -z "${ZENODO_TOKEN:-}" ]]; then
+            echo "::notice::No ZENODO_TOKEN configured - skipping the Zenodo upload."
+            exit 0
+          fi
+          version="${{ needs.build-windows-msix.outputs.version }}"
+          .github/scripts/zenodo-upload.sh "$version" artifacts/aTrain-* artifacts/checksums.txt

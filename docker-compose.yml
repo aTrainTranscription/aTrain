@@ -1,0 +1,55 @@
+services:
+  atrain:
+    # Force x86_64: the locked dependency graph (torch+cu128, torchcodec,
+    # pyannote.audio) ships x86_64-only wheels. On an ARM host (e.g. Apple
+    # Silicon / OrbStack) Docker runs this under emulation so a plain
+    # `uv sync` resolves exactly as it does in CI. Without this pin the build
+    # defaults to the host arch (aarch64), where torchcodec has no wheel and
+    # the develop-branch app fails to import pyannote.audio at startup.
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    volumes:
+      # Bind mount: live source code editing from host
+      - .:/workspace
+      # Named volume: shadows the bind mount above so the image-built venv
+      # at the uv-default /workspace/.venv is not masked by the host directory
+      # (a fresh worktree has no .venv). Without this, PATH=/workspace/.venv/bin
+      # points at an empty dir and `aTrain` is "executable file not found".
+      # Seeded from the image on first start; recreate with `down -v` (or
+      # `docker volume rm atrain_venv`) after a dependency change so the
+      # rebuilt venv is picked up.
+      - atrain_venv:/workspace/.venv
+      # Host bind mount: persists downloaded models and transcription output,
+      # and lets contributors open results (data/transcriptions/.../*.txt)
+      # directly in their editor instead of docker cp / exec out of a volume.
+      # Maps to ATRAIN_DIR (ATRAIN_USER_DIR below). The container writes as
+      # root, so files under data/ are root-owned; clean up with
+      # `docker compose exec atrain rm ...` or sudo. data/ is git- and
+      # docker-ignored.
+      - ./data:/root/.local/share/aTrain
+    command: python dev.py
+    environment:
+      # Prevents Python from buffering stdout/stderr (cleaner container logs)
+      - PYTHONUNBUFFERED=1
+      # Prepend bind-mounted source so live edits take effect without reinstalling
+      - PYTHONPATH=/workspace
+      # Wakepy tries to prevent system sleep — not applicable in a headless container.
+      # This env var tells wakepy to silently succeed without touching the system.
+      - WAKEPY_FAKE_SUCCESS=1
+      # Align aTrain_core's data dir with the ./data bind mount above.
+      # aTrain_core checks ATRAIN_USER_DIR first; without it, ATRAIN_DIR falls
+      # back to platformdirs.user_documents_path() → /root/Documents/aTrain,
+      # which is outside the mount, so models and transcription output would
+      # land in the container layer and be lost on `docker compose down`.
+      - ATRAIN_USER_DIR=/root/.local/share/aTrain
+      # pyannote.audio 4.x requires an explicit telemetry opt-in/out and raises
+      # ValueError on model load if unset. aTrain_core only sets this default
+      # inside its Flatpak branch, so non-Flatpak runtimes (Docker) must set it.
+      - PYANNOTE_METRICS_ENABLED=false
+
+volumes:
+  atrain_venv:

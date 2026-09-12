@@ -15,17 +15,38 @@ authors = [
 
 dynamic = ["version"]
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "AGPL-3.0-or-later"
 requires-python = ">=3.11"
 
 dependencies = [
-  "aTrain_core@git+https://github.com/JuergenFleiss/atrain_core.git@develop",
-  "wakepy==0.7.2",
-  "show-in-file-manager==1.1.4",
+  # Engine (formerly aTrain_core's own dependencies; consolidated post-monorepo merge)
+  "faster-whisper==1.2.1",
+  "pandas==2.3.3",
+  "pyannote.audio==4.0.4",
+  "numpy==2.2.2",
+  "werkzeug==3.1.8",
+  "huggingface-hub==0.30.2",
+  "torch==2.9.1+cu128; sys_platform == 'win32'",
+  "torch==2.9.1; sys_platform != 'win32'",
+  # torchaudio must match torch (ABI-coupled); keep in lockstep with the pins above.
+  "torchaudio==2.9.1+cu128; sys_platform == 'win32'",
+  "torchaudio==2.9.1; sys_platform != 'win32'",
   "typer==0.16.0",
-  "nicegui==2.21.1",
+  "platformdirs==4.5.1",
+  "jiwer==3.0.4",
+]
+
+[project.optional-dependencies]
+# Install with `pip install 'aTrain[gui]'` to use the GUI / desktop window.
+# Without these, `aTrain start` fails with a clean error pointing here;
+# headless CLI (`aTrain_core transcribe …`, `aTrain init`) works on the
+# base install.
+gui = [
+  "nicegui==3.15.0",
   "pywebview==6.1",
   "pywebview[GTK]; sys_platform == 'linux'",
+  "show-in-file-manager==1.1.4",
+  "wakepy==0.7.2",
   "dask; sys_platform == 'linux'",
 ]
 
@@ -33,8 +54,16 @@ dependencies = [
 where = ["."]
 include = ["aTrain*"]
 
+[tool.setuptools.package-data]
+# Ship the engine's JSON config, loaded at runtime via
+# importlib.resources.files("aTrain_core.data"). Without this the wheel omits
+# them and a non-editable `pip install` breaks at startup; CI only passes
+# because the tests run from the source tree.
+aTrain_core = ["data/*.json"]
+
 [project.scripts]
 aTrain = "aTrain.app:cli"
+aTrain_core = "aTrain_core.cli:cli"
 
 [tool.setuptools.dynamic]
 version = { attr = "aTrain.version.__version__" }
@@ -47,11 +76,12 @@ index-strategy = "unsafe-best-match"
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
+explicit = true  # only used when [tool.uv.sources] points at it (win32 torch+cu128). Without this, unsafe-best-match would also pull cu128 wheels on Linux, which break the torchcodec binary ABI.
 
 [tool.uv.sources]
-torch       = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
-torchaudio  = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
-torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'linux'" }]
+torch       = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32'" }]
+torchaudio  = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu128", marker = "sys_platform == 'win32'" }]
 
 [dependency-groups]
 dev = [
@@ -61,12 +91,15 @@ dev = [
 ]
 
 [tool.bandit]
-# Only the aTrain package is scanned (CI runs `bandit -r aTrain`); these
-# excludes keep ad-hoc local runs from descending into build/venv/model dirs.
-exclude_dirs = [".venv", "build", "dist", "aTrain.egg-info", "aTrain/required_models"]
+# CI runs `bandit -r aTrain aTrain_core`; these excludes keep ad-hoc local
+# runs from descending into build/venv/model dirs.
+exclude_dirs = [".venv", "build", "dist", "aTrain.egg-info", "aTrain_core.egg-info", "aTrain/required_models"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # NiceGUI's `user` fixture (UI E2E) is async; auto mode lets pytest-asyncio
 # handle async tests/fixtures without per-item markers.
 asyncio_mode = "auto"
+# nicegui>=3's `user` fixture executes a main file per test (replaces the
+# 2.x `module_under_test` marker); see tests/ui/main.py.
+main_file = "tests/ui/main.py"

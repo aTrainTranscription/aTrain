@@ -1,0 +1,155 @@
+# This repository adheres to the publiccode.yml standard by including this
+# metadata file that makes public software easily discoverable.
+# More info at https://github.com/italia/publiccode.yml
+publiccodeYmlVersion: "0.4"
+
+name: aTrain
+url: "https://github.com/aTrainTranscription/aTrain"
+landingURL: "https://business-analytics.uni-graz.at/en/research/atrain/"
+
+softwareVersion: "1.5.0"
+releaseDate: "2026-01-28"
+
+logo: docs/images/logo.svg
+
+platforms:
+  - windows
+  - linux
+
+categories:
+  - data-collection
+  - knowledge-management
+
+developmentStatus: stable
+
+softwareType: standalone/desktop
+
+intendedAudience:
+  countries:
+    - de
+    - at
+  scope:
+    - research
+    - science-and-technology
+
+description:
+  en:
+    localisedName: aTrain
+    shortDescription: >-
+      Offline, GDPR-compliant transcription of speech recordings using
+      local Whisper machine-learning models.
+    longDescription: >
+      aTrain automatically transcribes speech recordings using
+      state-of-the-art machine-learning models, without uploading any data.
+      It was developed by researchers at the Center for Data Science in Business and Society
+       at the University of Graz and tested by researchers at
+      the Know-Center Graz.
+
+
+      All processing runs completely offline on the user's own device. No
+      recording or transcription is ever sent to the internet, which helps
+      researchers meet data-privacy requirements from ethical guidelines and
+      comply with legal requirements such as the GDPR.
+
+
+      aTrain provides a user-friendly interface to the faster-whisper
+      implementation of OpenAI's Whisper model, delivering high transcription
+      quality across 99 languages. An optional speaker-detection mode based on
+      pyannote.audio assigns each text segment to a speaker. Transcripts export
+      directly into the common tools for qualitative analysis, ATLAS.ti,
+      MAXQDA and NVivo, letting researchers play the audio for a text segment
+      by clicking its timestamp.
+
+
+      aTrain runs on the CPU or, for a significant speed-up, on a CUDA-enabled
+      NVIDIA GPU. It is distributed through Flathub for Linux and the Microsoft
+      Store for Windows, and is also installable as a headless command-line
+      tool for automated transcription pipelines.
+    features:
+      - Automatic offline speech-to-text transcription
+      - Speaker detection and diarization
+      - Transcription in 99 languages
+      - GDPR-compliant, fully local processing
+      - Optional CUDA GPU acceleration
+      - Export to ATLAS.ti, MAXQDA and NVivo compatible formats
+      - Command-line interface for headless pipelines
+    documentation: "https://github.com/aTrainTranscription/aTrain/blob/main/docs/README.md"
+    screenshots:
+      - share/screenshots/screenshot_1.png
+      - share/screenshots/screenshot_2.png
+      - share/screenshots/screenshot_3.png
+      - share/screenshots/screenshot_4.png
+      - share/screenshots/screenshot_5.png
+  de:
+    localisedName: aTrain
+    shortDescription: >-
+      Offline und DSGVO-konforme Transkription von Sprachaufnahmen mit
+      lokalen Whisper-Machine-Learning-Modellen.
+    longDescription: >
+      aTrain transkribiert Sprachaufnahmen automatisch mit modernen
+      Machine-Learning-Modellen, ohne dass Daten hochgeladen werden.
+     Entwickelt wurde die Software von Forschenden am Center for Data Science in Business and Society
+       der Universität Graz und getestet von Forschenden am
+      Know-Center Graz.
+
+
+      Die gesamte Verarbeitung läuft vollständig offline auf dem eigenen Gerät.
+      Weder Aufnahmen noch Transkriptionen werden ins Internet übertragen. Das
+      hilft Forschenden, Datenschutzanforderungen aus ethischen Richtlinien zu
+      erfüllen und rechtliche Vorgaben wie die DSGVO einzuhalten.
+
+
+      aTrain bietet eine benutzerfreundliche Oberfläche für die
+      faster-whisper-Implementierung des Whisper-Modells von OpenAI und liefert
+      hohe Transkriptionsqualität in 99 Sprachen. Ein optionaler
+      Sprechererkennungsmodus auf Basis von pyannote.audio ordnet jedem
+      Textabschnitt eine sprechende Person zu. Die Transkripte lassen sich
+      direkt in die gängigen Werkzeuge zur qualitativen Analyse importieren,
+      ATLAS.ti, MAXQDA und NVivo. Per Klick auf einen Zeitstempel wird das
+      zugehörige Audio abgespielt.
+
+
+      aTrain läuft auf der CPU oder, für eine deutliche Beschleunigung, auf
+      einer CUDA-fähigen NVIDIA-GPU. Die Software wird über Flathub für Linux
+      und den Microsoft Store für Windows bereitgestellt und ist zusätzlich als
+      Kommandozeilen-Werkzeug für automatisierte Transkriptions-Pipelines
+      installierbar.
+    features:
+      - Automatische Offline-Transkription (Sprache zu Text)
+      - Sprechererkennung und Diarisierung
+      - Transkription in 99 Sprachen
+      - DSGVO-konforme, vollständig lokale Verarbeitung
+      - Optionale CUDA-GPU-Beschleunigung
+      - Export in ATLAS.ti-, MAXQDA- und NVivo-kompatible Formate
+      - Kommandozeilen-Schnittstelle für Headless-Pipelines
+    documentation: "https://github.com/aTrainTranscription/aTrain/blob/main/docs/README.md"
+    screenshots:
+      - share/screenshots/screenshot_1.png
+      - share/screenshots/screenshot_2.png
+      - share/screenshots/screenshot_3.png
+      - share/screenshots/screenshot_4.png
+      - share/screenshots/screenshot_5.png
+
+legal:
+  license: AGPL-3.0-or-later
+  mainCopyrightOwner: Jürgen Fleiß
+
+maintenance:
+  type: community
+  contacts:
+    - name: Jürgen Fleiß
+      email: "juergen.fleiss@uni-graz.at"
+      affiliation: University of Graz
+    - name: Armin Haberl
+      email: "armin.haberl@uni-graz.at"
+      affiliation: University of Graz
+
+localisation:
+  localisationReady: false
+  availableLanguages:
+    - en
+
+dependsOn:
+  hardware:
+    - name: NVIDIA CUDA-capable GPU
+      optional: true

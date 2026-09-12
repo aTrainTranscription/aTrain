@@ -1,0 +1,35 @@
+{
+  "upload_type": "software",
+  "title": "aTrain - Accessible Transcription of Interviews",
+  "description": "<p>aTrain is a tool for automatically transcribing speech recordings utilizing state-of-the-art machine learning models without uploading any data. It provides a user-friendly interface to OpenAI's Whisper model, ensuring high-quality transcription while preserving data privacy by processing everything locally on the user's device.</p><p>This record contains the Windows installer (MSIX). Verify the download against the sha256 checksums published on the corresponding GitHub release.</p>",
+  "creators": [
+    { "name": "Haberl, Armin", "affiliation": "University of Graz" },
+    { "name": "Fleiß, Jürgen", "affiliation": "University of Graz" },
+    { "name": "Kowald, Dominik", "affiliation": "Know-Center Graz" },
+    { "name": "Thalmann, Stefan", "affiliation": "University of Graz" }
+  ],
+  "license": "AGPL-3.0-or-later",
+  "access_right": "open",
+  "keywords": [
+    "transcription",
+    "speech-to-text",
+    "whisper",
+    "privacy-preserving",
+    "offline",
+    "interviews",
+    "qualitative-research"
+  ],
+  "communities": [{ "identifier": "atraintranscription" }],
+  "related_identifiers": [
+    {
+      "identifier": "10.1016/j.jbef.2024.100891",
+      "relation": "isDocumentedBy",
+      "scheme": "doi"
+    },
+    {
+      "identifier": "https://github.com/aTrainTranscription/aTrain",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ]
+}

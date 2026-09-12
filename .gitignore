@@ -10,4 +10,18 @@ aTrain/required_models/*
 .DS_Store
 .cache
 .pytest_cache
-import sessions/
+
+# Local dev container overrides (personal, not committed)
+.devcontainer/
+docker-compose.override.yml
+
+# Dev-container runtime output: models + transcriptions bind-mounted from
+# the container to ./data (root-owned). Never committed.
+data/
+
+# Environment files (may contain secrets)
+.env
+.env.local
+.env.*.local
+.vscode
+.nicegui/

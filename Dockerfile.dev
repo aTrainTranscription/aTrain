@@ -1,0 +1,97 @@
+FROM python:3.11-slim-bookworm
+
+# git: install aTrain_core from its GitHub ref (over HTTPS)
+# gcc/g++: compile native extensions from aTrain_core deps
+# curl/ca-certificates: required to run the official uv installer below
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        git \
+        gcc \
+        g++ \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv: matches the workflow documented in CONTRIBUTING.md (uv sync / uv run).
+# Use the official standalone installer; UV_INSTALL_DIR places the binaries
+# on the system PATH so subsequent layers can call `uv` directly.
+ENV UV_INSTALL_DIR=/usr/local/bin
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+WORKDIR /workspace
+
+# Copy only dependency metadata first to leverage Docker layer caching.
+# The actual source is bind-mounted at runtime, but uv needs pyproject.toml
+# and uv.lock here to resolve and install dependencies, plus version.py
+# because the project version is read dynamically from it.
+COPY pyproject.toml uv.lock ./
+COPY aTrain/version.py aTrain/version.py
+
+# uv settings tuned for container builds:
+#   UV_LINK_MODE=copy        — bind-mounted /workspace is on a different
+#                              filesystem than /workspace/.venv, so hardlinks
+#                              would fail; copy is the safe default.
+#   UV_COMPILE_BYTECODE=1    — pre-compile .pyc on install for faster startup.
+#   UV_PYTHON_DOWNLOADS=never — use the system Python from this image, do not
+#                              let uv fetch its own interpreter.
+#   UV_HTTP_TIMEOUT=300      — the Linux lock pins torch==2.9.1+cu128, which
+#                              pulls the large nvidia-*-cu12 CUDA wheels (cublas
+#                              ~570 MiB, cusparselt ~270 MiB) from
+#                              download.pytorch.org. The default per-request
+#                              timeout aborts these mid-download on slower
+#                              links; 300s lets them complete.
+ENV UV_LINK_MODE=copy \
+    UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never \
+    UV_HTTP_TIMEOUT=300
+
+# Sync the locked dependency set. This image is built for linux/amd64 (pinned
+# in docker-compose.yml), so the x86_64 wheels in uv.lock — CUDA torch,
+# torchcodec, pyannote.audio, and aTrain_core@develop — all resolve directly.
+# This matches CONTRIBUTING.md's documented `uv sync` and what CI installs.
+#
+# The only deviation is the excluded packages below, all build/UX concerns
+# rather than platform concerns. The container runs aTrain with --no-native
+# (browser mode), so neither pywebview GUI backend is ever loaded:
+#   - pyqt5/pyqt6 chain + qtpy: need the Qt SDK to build from source.
+#   - pygobject/pygobject-stubs: pywebview's GTK backend. pygobject pulls in
+#     pycairo, which builds from an sdist and needs the cairo/glib native
+#     libraries plus pkg-config — none of which the GTK backend needs here.
+#   - dask: only used by full transcription, not by UI dev.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project \
+        --no-install-package pyqt5 \
+        --no-install-package pyqtwebengine \
+        --no-install-package pyqt5-qt5 \
+        --no-install-package pyqt5-sip \
+        --no-install-package pyqtwebengine-qt5 \
+        --no-install-package pyqt6 \
+        --no-install-package pyqt6-qt6 \
+        --no-install-package pyqt6-sip \
+        --no-install-package pyqt6-webengine \
+        --no-install-package pyqt6-webengine-qt6 \
+        --no-install-package qtpy \
+        --no-install-package pygobject \
+        --no-install-package pygobject-stubs \
+        --no-install-package pycairo \
+        --no-install-package dask
+
+# Install the project itself. The source is bind-mounted at runtime, so this
+# layer only provides the console-script entry point and metadata.
+COPY . .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --no-deps .
+
+# Put the uv-managed venv on PATH so the `aTrain` console script resolves
+# without an explicit `uv run`.
+ENV PATH="/workspace/.venv/bin:$PATH" \
+    VIRTUAL_ENV=/workspace/.venv
+
+# NiceGUI runs on 8080 by default
+EXPOSE 8080
+
+# Run in browser mode (no pywebview native window), with hot-reload.
+# The source directory is bind-mounted by docker-compose, so edits on the
+# host are reflected immediately inside the container; --reload restarts the
+# NiceGUI server on file change so contributors don't need a manual restart.
+CMD ["aTrain", "start", "--no-native", "--reload"]

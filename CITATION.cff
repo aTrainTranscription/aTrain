@@ -1,0 +1,72 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: aTrain - Accessible Transcription of Interviews
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Armin
+    family-names: Haberl
+    email: armin.haberl@uni-graz.at
+    affiliation: University of Graz
+  - given-names: Jürgen
+    family-names: Fleiß
+    email: juergen.fleiss@uni-graz.at
+    affiliation: University of Graz
+  - given-names: Dominik
+    family-names: Kowald
+    email: dkowald@know-center.at
+    affiliation: Know-Center Graz
+  - given-names: Stefan
+    family-names: Thalmann
+    email: stefan.thalmann@uni-graz.at
+    affiliation: University of Graz
+identifiers:
+  - type: url
+    value: 'https://github.com/aTrainTranscription/aTrain'
+    description: 'The GitHub repository for aTrain'
+repository-code: 'https://github.com/aTrainTranscription/aTrain'
+url: 'https://business-analytics.uni-graz.at/en/research/atrain/'
+abstract: >-
+  aTrain is a tool for automatically transcribing speech recordings
+  utilizing state-of-the-art machine learning models without uploading
+  any data. It provides a user-friendly interface to OpenAI's Whisper
+  model, ensuring high-quality transcription while preserving data
+  privacy by processing everything locally on the user's device.
+keywords:
+  - transcription
+  - speech-to-text
+  - whisper
+  - privacy-preserving
+  - offline
+  - interviews
+  - qualitative-research
+license: AGPL-3.0-or-later
+version: "1.4.2"
+date-released: 2026-02-12
+preferred-citation:
+  type: article
+  authors:
+    - given-names: Armin
+      family-names: Haberl
+      affiliation: University of Graz
+    - given-names: Jürgen
+      family-names: Fleiß
+      affiliation: University of Graz
+    - given-names: Dominik
+      family-names: Kowald
+      affiliation: Know-Center Graz
+    - given-names: Stefan
+      family-names: Thalmann
+      affiliation: University of Graz
+  doi: "10.1016/j.jbef.2024.100891"
+  journal: "Journal of Behavioral and Experimental Finance"
+  title: >-
+    Take the aTrain. Introducing an Interface for the Accessible
+    Transcription of Interviews
+  volume: 41
+  year: 2024
+  url: "https://www.sciencedirect.com/science/article/pii/S2214635024000066"

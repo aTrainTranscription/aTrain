@@ -156,9 +156,6 @@ def test_load_faqs_returns_list_of_qa_entries():
     # Smoke test for importlib.resources.files("aTrain.static") resolving the
     # bundled faq.yaml — the kind of resource lookup a packaging change can
     # silently break.
-    # Note: load_faqs is annotated `-> dict` but the YAML is a list, so it
-    # actually returns a list[dict]; pinned here as-is (the wrong annotation
-    # is a separate flag, not a red test).
     faqs = archive.load_faqs()
     assert isinstance(faqs, list)
     assert all("question" in entry and "answer" in entry for entry in faqs)

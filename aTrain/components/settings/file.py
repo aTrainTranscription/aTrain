@@ -1,6 +1,6 @@
 import os
 
-from aTrain_core.globals import FLATPAK
+from aTrain_core.globals import FLATPAK, LINUX
 from aTrain_core.settings import load_formats
 from nicegui import ui
 
@@ -95,7 +95,7 @@ def input_file() -> CustomUpload:
     folder_mode_button.on_click(lambda: set_selection_mode("folder"))
     set_selection_mode("file")
 
-    if not FLATPAK:
+    if not (FLATPAK or LINUX):
         select_button.bind_text(uploader, "file_text")
         select_button.bind_icon(uploader, "file_icon")
         select_button.on_click(uploader.pick_files)

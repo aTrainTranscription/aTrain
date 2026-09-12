@@ -16,7 +16,9 @@ from nicegui.run import setup as setup_process_pool
 
 
 def read_downloaded_models() -> list:
-    directories_to_search = [MODELS_DIR, REQUIRED_MODELS_DIR]
+    # The two dirs coincide when REQUIRED_MODELS_DIR falls back to MODELS_DIR
+    # (no bundled models); dedupe so models aren't listed twice.
+    directories_to_search = list(dict.fromkeys([MODELS_DIR, REQUIRED_MODELS_DIR]))
     all_downloaded_models = []
 
     for directory in directories_to_search:

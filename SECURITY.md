@@ -21,3 +21,5 @@ Please add at least the following details:
 
 
 (adapted from https://github.com/openqda/openqda/edit/main/SECURITY.md)
+
+Release builds are code-signed; see the [Code signing policy](docs/code-signing-policy.md).

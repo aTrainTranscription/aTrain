@@ -3,17 +3,18 @@
 ## Accessible Transcription of Interviews
 aTrain is a tool for automatically transcribing speech recordings utilizing state-of-the-art machine learning models without uploading any data. It was developed by researchers at the Business Analytics and Data Science-Center at the University of Graz and tested by researchers from the Know-Center Graz.
 
-
+## Get aTrain
 <p>
   <a href="https://flathub.org/apps/io.github.juergenfleiss.aTrain">
-    <img height="58" alt="Get it on Flathub" src="https://flathub.org/api/badge?locale=en">
-  </a>
+    <img height="58" alt="Get it on Flathub" src="https://flathub.org/api/badge?locale=en"></a>
   &nbsp;&nbsp;
   <a href="https://apps.microsoft.com/detail/9N15Q44SZNS2?mode=direct">
-    <img width="220" alt="Get it from Microsoft" src="https://get.microsoft.com/images/en-us%20dark.svg">
-  </a>
+    <img width="220" alt="Get it from Microsoft" src="https://get.microsoft.com/images/en-us%20dark.svg"></a>
 </p>
 
+aTrain is published on Flathub for Linux and the Microsoft Store for Windows.  Additional download types [can be found here](https://business-analytics.uni-graz.at/de/forschung/atrain/download/).
+
+How release builds are signed: see the [Code signing policy](docs/code-signing-policy.md).
 
 
 ## About aTrain
@@ -43,7 +44,7 @@ aTrain-core can process speech recordings a total of 99 languages, including Afr
 \
 **MAXQDA, ATLAS.ti and nVivo compatible output 📄**
 \
-aTrain-core provides transcription files that are seamlessly importable into the most popular tools for qualitative analysis, ATLAS.ti, MAXQDA and nVivo. This allows you to directly play audio for the corresponding text segment by clicking on its timestamp. Go to the [tutorial](https://github.com/BANDAS-Center/aTrain/wiki/Tutorials) for MAXQDA.
+aTrain-core provides transcription files that are seamlessly importable into the most popular tools for qualitative analysis, ATLAS.ti, MAXQDA and nVivo. This allows you to directly play audio for the corresponding text segment by clicking on its timestamp. Go to the [tutorial](docs/tutorials.md) for MAXQDA and NVivo.
 \
 \
 **Nvidia GPU support 🖥️**
@@ -69,6 +70,74 @@ Transcription Time (incl. speaker detection) for 00:22:00 File:
 | GPU: RTX 2070 Max-Q    | 00:05:59    | 00:??:??          | 00:04:37       |
 
 
+## Headless / CLI Usage
+
+For headless transcription pipelines (servers, automation, scripts) aTrain
+is also installable via pip and exposes a CLI.
+
+### Install
+
+Until aTrain ships on PyPI, install directly from the GitHub repo. Engine
+only (CLI usage):
+
+```bash
+pip install "aTrain @ git+https://github.com/aTrainTranscription/aTrain.git"
+```
+
+For `aTrain start` (the desktop / browser app), add the GUI extras:
+
+```bash
+pip install "aTrain[gui] @ git+https://github.com/aTrainTranscription/aTrain.git"
+```
+
+On Windows, prepend the PyTorch CUDA index for the `cu128` torch wheel:
+
+```bash
+pip install ... --extra-index-url https://download.pytorch.org/whl/cu128
+```
+
+On Linux the PyPI torch wheel already bundles CUDA; macOS is CPU-only.
+NVIDIA CUDA GPU support currently covers Windows and Debian-based Linux.
+
+> 💡 **Linux + slow disk**: if `pip install` keeps killing the torch wheel
+> collection, retry with `--no-cache-dir`.
+
+When aTrain reaches PyPI (planned, not yet), the install command becomes
+`pip install aTrain` and `pip install 'aTrain[gui]'`.
+
+### Transcribe from the command line
+
+Default settings:
+
+```bash
+aTrain_core transcribe /path/to/audio/file.mp3
+```
+
+With overrides:
+
+```bash
+aTrain_core transcribe /path/to/audio/file.mp3 \
+    --model <MODEL> --language <LANGUAGE> \
+    --speaker-detection --speaker-count <N> \
+    --device <DEVICE> --compute-type <COMPUTE_TYPE>
+```
+
+The full list of model configurations (with **defaults in bold**):
+
+![Model Configurations](docs/images/model_configurations.png)
+
+> 💡 **Distilled models** (e.g. `faster-distil-english`) need an explicit
+> `--language` flag since they are single-language only.
+
+### Manage models manually
+
+```bash
+aTrain init                # download the required models in one go
+aTrain_core load <MODEL>   # download a specific model
+aTrain_core load all       # download every supported model
+aTrain_core remove <MODEL> # delete a specific model
+```
+
 ## Roadmap and Upcoming Features
 
 Planned in the near future.
@@ -81,10 +150,21 @@ Planned in the near future.
 - Allowing users to setting the output directory
 - Allow for saving settings and defaults (currently resets after each transcription)  **Implemented in v1.4.0
 
+## Documentation
+
+Full user documentation lives in [`docs/`](docs/README.md):
+
+- [Installation (end users)](docs/installation.md) — packaged apps and pip.
+- [Linux installation](docs/installation-linux.md) — manual Ubuntu / Debian setup.
+- [Tutorials](docs/tutorials.md) — importing aTrain output into MAXQDA and NVivo.
+
 ## For contributors
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for local development setup. aTrain
-uses [uv](https://docs.astral.sh/uv/) as its recommended package manager.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local development setup, building a
+standalone executable, and the branching model. aTrain uses
+[uv](https://docs.astral.sh/uv/) as its recommended package manager.
 
 ## Attribution
 The GIFs and Icons in aTrain are from [tenor](https://tenor.com/) and [flaticon](https://www.flaticon.com/).
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).

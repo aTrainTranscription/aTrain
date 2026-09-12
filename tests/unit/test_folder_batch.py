@@ -49,6 +49,7 @@ def _install_lightweight_runtime_stubs() -> None:
         navigate=SimpleNamespace(reload=lambda: None),
         timer=object,
         dialog=object,
+        upload=SimpleNamespace(FileUpload=object),
     )
     nicegui.ElementFilter = lambda *args, **kwargs: []
     sys.modules.setdefault("nicegui", nicegui)
@@ -63,19 +64,6 @@ def _install_lightweight_runtime_stubs() -> None:
     nicegui_run.setup = lambda: None
     nicegui_run.tear_down = lambda: None
     sys.modules.setdefault("nicegui.run", nicegui_run)
-
-    settings = types.ModuleType("aTrain_core.settings")
-    settings.ComputeType = ComputeType
-    settings.Device = Device
-    settings.Settings = Settings
-    settings.check_inputs_transcribe = lambda *args, **kwargs: True
-    settings.load_formats = lambda: [".mp3", ".wav"]
-    sys.modules.setdefault("aTrain_core.settings", settings)
-
-    load_resources = types.ModuleType("aTrain_core.load_resources")
-    load_resources.get_model = lambda model: Path(".")
-    load_resources.load_model_config_file = lambda: {"tiny": {"type": "normal"}}
-    sys.modules.setdefault("aTrain_core.load_resources", load_resources)
 
     outputs = types.ModuleType("aTrain_core.outputs")
     outputs.TRANSCRIPT_DIR = Path("transcriptions")
@@ -146,16 +134,6 @@ def _install_lightweight_runtime_stubs() -> None:
     faster_whisper = types.ModuleType("faster_whisper")
     faster_whisper.WhisperModel = object
     sys.modules.setdefault("faster_whisper", faster_whisper)
-
-    starlette = types.ModuleType("starlette")
-    starlette_formparsers = types.ModuleType("starlette.formparsers")
-
-    class MultiPartParser:
-        spool_max_size = 0
-
-    starlette_formparsers.MultiPartParser = MultiPartParser
-    sys.modules.setdefault("starlette", starlette)
-    sys.modules.setdefault("starlette.formparsers", starlette_formparsers)
 
     werkzeug = types.ModuleType("werkzeug")
     werkzeug_utils = types.ModuleType("werkzeug.utils")

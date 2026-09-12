@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from importlib.resources import files
 from multiprocessing.managers import DictProxy
@@ -38,16 +39,26 @@ def dialog_process(progress: DictProxy):
 
 def update_progress(progress: DictProxy, start_time: datetime):
     state = app.storage.general
-    current = progress["current"]
-    total = progress["total"]
-    task = progress["task"]
-    file_index = progress.get("file_index", 0)
-    file_total = progress.get("file_total", 0)
-    progress_index = progress.get("progress_index", file_index)
-    progress_total = progress.get("progress_total", file_total)
+    try:
+        current = progress["current"]
+        total = progress["total"]
+        task = progress["task"]
+        file_index = progress.get("file_index", 0)
+        file_total = progress.get("file_total", 0)
+        progress_index = progress.get("progress_index", file_index)
+        progress_total = progress.get("progress_total", file_total)
+        file_name = progress.get("file_name", "")
+    except (EOFError, ConnectionError, FileNotFoundError) as e:
+        # The manager process backing `progress` dies while a cancelled
+        # transcription tears down; a late timer tick would otherwise log a
+        # pseudo-crash (BrokenPipeError) right before the timer is cancelled.
+        # Log it: if the manager dies for any *other* reason the dialog would
+        # otherwise freeze on stale storage values with no trace at all.
+        logging.getLogger(__name__).debug("progress proxy unavailable: %r", e)
+        return
     if progress_total:
         state["progress"] = (progress_index + (current / total)) / progress_total
-        file_name = clean_progress_file_name(progress.get("file_name", ""))
+        file_name = clean_progress_file_name(file_name)
     else:
         state["progress"] = current / total
         file_name = ""
@@ -60,7 +71,7 @@ def update_progress(progress: DictProxy, start_time: datetime):
     else:
         total_tasks = 3 if state["speaker_detection"] else 2
         current_task = {"Prepare": 1, "Transcribe": 2, "Detect Speakers": 3}[task]
-        state["task_number"] = f"Stage {current_task}/{total_tasks}"
+        state["task_number"] = f"Task {current_task}/{total_tasks}"
         state["task"] = task
     update_time(start_time)
 

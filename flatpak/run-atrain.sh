@@ -1,6 +1,11 @@
 #!/bin/bash
 set -eo pipefail
 
+# Workaround for WebKitGTK sandbox graphics driver/GBM issues (especially on NVIDIA) https://github.com/aTrainTranscription/aTrain/issues/151#issuecomment-4901338674
+export WEBKIT_DISABLE_DMABUF_RENDERER=1
+# Force pywebview to use GTK directly and avoid loading warnings for QT
+export PYWEBVIEW_GUI=gtk
+
 required_models_present() {
     if [[ -n "${REQUIRED_MODEL_1:-}" && -n "${REQUIRED_MODEL_2:-}" ]]; then
         [[ -d "${REQUIRED_MODEL_1}" && -d "${REQUIRED_MODEL_2}" ]]

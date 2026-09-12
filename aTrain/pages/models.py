@@ -1,13 +1,18 @@
 from aTrain.layouts.base import base_layout
 from aTrain.utils.models import download_model, read_model_metadata, remove_model
-from aTrain_core.globals import REQUIRED_MODELS
+from aTrain_core.globals import is_packaged_model
 from nicegui import ui
 
 
 @ui.page("/models")
 def page():
     all_models = read_model_metadata()
-    models = [model for model in all_models if model["model"] not in REQUIRED_MODELS]
+    # Hide only what the user genuinely cannot manage: models that ship inside
+    # the (read-only) install dir. Filtering by REQUIRED_MODELS membership hid
+    # large-v3-turbo from slim builds too, where it is not bundled - leaving the
+    # default model unreachable, since the transcribe page lists only models
+    # already on disk.
+    models = [model for model in all_models if not is_packaged_model(model["model"])]
     with base_layout():
         ui.label("Model Manager").classes("text-lg text-dark font-bold")
         with ui.list().classes("w-full").props("separator"):

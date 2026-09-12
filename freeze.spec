@@ -31,7 +31,10 @@ datas += copy_metadata('pyannote.audio')
 datas += copy_metadata('huggingface-hub')
 datas += copy_metadata('pyyaml')
 datas += copy_metadata('pytorch_lightning')
-datas += copy_metadata('aTrain_core')
+# aTrain_core is not a separate distribution under the single-pyproject layout
+# (it ships inside the aTrain wheel), so copy_metadata('aTrain_core') would raise
+# PackageNotFoundError. Its data files are still bundled via collect_data_files
+# above; nothing reads aTrain_core's dist metadata at runtime.
 
 hiddenimports = ['pytorch_lightning','pyyaml','huggingface-hub','pyannote','pytorch','lightning']
 hiddenimports += collect_submodules('wakepy')

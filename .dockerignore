@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+.claude/
+
+# Git
+.git/
+
+# Sample data and docs (not needed in the image)
+sample_data/
+docs/
+
+# Dev-container runtime output (models + transcriptions); bind-mounted at
+# runtime, must not enter the build context.
+data/
+
+# Bundled Whisper/pyannote models (~1.5 GB); downloaded at runtime, not needed
+# in the build context.
+aTrain/required_models/

@@ -78,11 +78,11 @@ Current mitigations:
 - All dependency versions are pinned
 - Model downloads use HTTPS (encrypted transport)
 - `aTrain_core` is pinned to a specific release tag
+- Every release publishes a CycloneDX 1.6 SBOM covering the installed dependencies and the ML models, attached to the GitHub release and the Zenodo record
+- `pip-audit` checks the locked dependencies against the PyPI advisory database on every pull request
 
 Gaps:
 - No hash/checksum verification for downloaded models
-- No Software Bill of Materials (SBOM) provided
-- No automated dependency vulnerability scanning (e.g., Dependabot, Safety)
 - Git tag pinning does not guarantee integrity — tags are mutable and can be re-pointed in the upstream repository. Commit-SHA pinning would provide a stronger guarantee; tracked as a follow-up.
 
 ---

@@ -1,23 +1,11 @@
 import os
-from importlib.resources import files
+import sys
 from pathlib import Path
 from typing import Annotated, cast
-from unittest.mock import patch
 
 from aTrain_core.globals import ATRAIN_DIR, FLATPAK, REQUIRED_MODELS
 from aTrain_core.load_resources import get_model
-from platformdirs import user_config_path
 from typer import Option, Typer
-from wakepy import keep
-
-from aTrain.utils.ports import find_available_port
-
-NICEGUI_STORAGE_PATH = user_config_path() / "aTrain" if FLATPAK else (ATRAIN_DIR / "settings")
-
-with patch.dict(os.environ, NICEGUI_STORAGE_PATH=str(NICEGUI_STORAGE_PATH)):
-    from nicegui import ui
-
-    from aTrain.pages import about, archive, faq, models, transcribe  # noqa
 
 cli = Typer(help="CLI for aTrain.")
 
@@ -37,7 +25,31 @@ def start(
         int, Option(help="Starting port for the web server; next free port is used")
     ] = 8080,
 ):
-    """Start aTrain."""
+    """Start aTrain (requires GUI extras — install with `pip install 'aTrain[gui]'`)."""
+    # Lazy imports: keep the GUI stack out of the import chain so headless
+    # installs (no [gui] extras) can still run `aTrain init` and `aTrain --help`.
+    try:
+        from importlib.resources import files
+        from unittest.mock import patch
+
+        from platformdirs import user_config_path
+
+        nicegui_storage_path = (
+            user_config_path() / "aTrain" if FLATPAK else (ATRAIN_DIR / "settings")
+        )
+        with patch.dict(os.environ, NICEGUI_STORAGE_PATH=str(nicegui_storage_path)):
+            from nicegui import ui
+
+            from aTrain.pages import about, archive, faq, models, transcribe  # noqa
+        from wakepy import keep
+    except ImportError as e:
+        sys.exit(
+            f"Error: GUI extras missing — '{e.name}' is not installed.\n"
+            "Install them with: pip install 'aTrain[gui]'"
+        )
+
+    from aTrain.utils.ports import find_available_port
+
     print("Running aTrain")
     selected_port = find_available_port(port)
     if selected_port != port:

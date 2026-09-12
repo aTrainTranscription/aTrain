@@ -62,7 +62,7 @@ jobs:
         run: uv sync --locked --only-group dev --no-install-project
 
       - name: Bandit security scan
-        run: uv run --no-sync bandit -r aTrain -c pyproject.toml
+        run: uv run --no-sync bandit -r aTrain aTrain_core -c pyproject.toml
 
   dependencies:
     name: pip-audit
@@ -97,10 +97,15 @@ jobs:
           uv export --format pylock.toml -o /tmp/audit/pylock.toml
           uv run --no-sync pip-audit /tmp/audit --locked
 
-  e2e:
-    name: e2e (core pipeline)
+  sbom:
+    name: sbom (CycloneDX)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    env:
+      # Kept in step with release.yml, where the same versions are pinned - this
+      # job is only worth anything if it exercises what the release uses.
+      CYCLONEDX_BOM: "cyclonedx-bom==7.3.1"
+      CYCLONEDX_LIB: "cyclonedx-python-lib[json-validation]==11.12.0"
 
     steps:
       - name: Checkout
@@ -112,16 +117,55 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install aTrain_core (CPU torch) + pytest
-        # Smoke-tests the transcription engine only, so we install aTrain_core
-        # standalone against the PyTorch CPU index — no cu128/GTK app runtime
-        # (~1.5 GB vs ~7.5 GB). aTrain_core's torch pin is index-agnostic, so
-        # the CPU index resolves torch==2.9.1+cpu cleanly. Off-lock by design
-        # (aTrain_core has no lock); pin a SHA here if reproducibility is needed.
+      - name: Install the project without its dependencies
+        # The release SBOM inventories the full runtime; this job only needs an
+        # environment the project is installed into, so the builder has an
+        # aTrain component to promote. Skipping torch keeps it at seconds.
+        run: |
+          uv venv
+          uv pip install --no-deps .
+
+      - name: Build and validate an SBOM
+        # Guards the release path: without this, a change that breaks the
+        # builder would only surface when a tag is pushed. The result is
+        # discarded - what is being tested is that it can be produced and
+        # conforms to the CycloneDX schema.
+        run: |
+          uvx --from "$CYCLONEDX_BOM" cyclonedx-py environment .venv \
+            --output-format JSON --output-file raw-sbom.json
+          uv run --no-project --with "$CYCLONEDX_LIB" \
+            python .github/scripts/build-sbom.py \
+              --input raw-sbom.json \
+              --output sbom.json \
+              --version 0.0.0-ci \
+              --platform linux \
+              --validate
+
+  e2e:
+    name: e2e (core pipeline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install aTrain engine deps (CPU torch) + pytest
+        # Smoke-tests the transcription engine only, so we install the project
+        # without [gui] extras and force CPU torch from the PyTorch CPU index
+        # (~1.5 GB vs ~7.5 GB for cu130/GTK). Post-monorepo-merge the engine
+        # code lives in `aTrain_core/` inside this wheel, so a plain `.` install
+        # picks it up alongside the engine deps in [project.dependencies].
         run: |
           uv venv
           uv pip install \
-            "aTrain_core @ git+https://github.com/JuergenFleiss/aTrain_core.git@develop" \
+            . \
             "torch==2.9.1+cpu" "torchaudio==2.9.1+cpu" pytest pytest-asyncio \
             --extra-index-url https://download.pytorch.org/whl/cpu \
             --index-strategy unsafe-best-match
@@ -132,7 +176,7 @@ jobs:
   e2e-app:
     name: e2e (app, full stack)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -151,14 +195,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Install the full app runtime (cu128) + pytest
-        # The UI boot test needs the real `aTrain` CLI, so this installs the
-        # locked cu128/GTK stack — which also validates that the shipped
-        # dependency set installs and imports. On a GPU-less runner the cu128
-        # torch build simply runs on CPU. pytest is not an app dependency, so
-        # it is added after the locked sync.
+      - name: Install the full app runtime ([gui] extras) + pytest
+        # The UI tests need the real `aTrain start` runtime, so this installs
+        # the locked GTK/GUI stack — which also validates that the shipped
+        # dependency set installs and imports. On a GPU-less runner the GUI
+        # runs in browser mode. pytest is not an app dependency, so it is
+        # added after the locked sync.
         run: |
-          uv sync --locked
+          uv sync --locked --extra gui
           uv pip install pytest pytest-asyncio
 
       - name: Run E2E tests against the shipped stack (boot + transcribe)
@@ -168,6 +212,46 @@ jobs:
         # just installed. `uv run` puts .venv/bin on PATH for the `aTrain`
         # subprocess; --no-sync keeps the just-installed pytest in place.
         run: uv run --no-sync pytest tests/core tests/ui -v
+
+  e2e-browser:
+    name: e2e (real browser, Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install GTK build deps for pywebview[GTK]
+        # Same as e2e-app: the locked deps include pywebview[GTK] on Linux
+        # even though we only run in browser mode here (--no-native). Keeps
+        # the install path identical to the shipped stack.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libgirepository1.0-dev
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install app runtime + pytest + Playwright
+        run: |
+          uv sync --locked --extra gui
+          uv pip install pytest pytest-playwright
+
+      - name: Install Playwright browsers (Chromium only for PoC)
+        # --with-deps pulls the system libs Playwright's Chromium needs on
+        # Ubuntu. Only Chromium for the PoC; adding WebKit / Firefox is a
+        # separate follow-up matrix entry.
+        run: uv run --no-sync playwright install --with-deps chromium
+
+      - name: Run real-browser e2e tests
+        # Uses the same `aTrain start --no-native` subprocess pattern as the
+        # boot smoke, plus Playwright's Chromium driving it. See
+        # tests/e2e_browser/conftest.py for the fixture.
+        run: uv run --no-sync pytest tests/e2e_browser -v
 
   unit:
     name: unit (${{ matrix.os }})
@@ -190,18 +274,19 @@ jobs:
 
       - name: Install unit-test deps (no torch, no GTK)
         # The unit tests cover only torch- and NiceGUI-free helpers
-        # (aTrain/utils/archive.py), so we skip the heavy app runtime entirely.
-        # aTrain_core is installed with --no-deps (we need only
-        # aTrain_core.globals, which imports just platformdirs), plus the few
-        # light libraries archive.py imports, plus pytest. Stays in seconds.
+        # (aTrain/utils/archive.py, aTrain_core/integrity.py and the model
+        # resolution around it), so we skip the heavy app runtime entirely.
+        # Post-monorepo-merge aTrain_core ships inside this wheel; `--no-deps .`
+        # installs both top-level packages without pulling torch/pyannote, plus
+        # the few light libraries those modules import, plus pytest. All of it
+        # is pure Python and stays in seconds.
         # `shell: bash` so the `\` line-continuations work on windows-latest too
         # (default Windows shell is pwsh, which uses backtick instead).
         shell: bash
         run: |
           uv venv
-          uv pip install --no-deps \
-            "aTrain_core @ git+https://github.com/JuergenFleiss/aTrain_core.git@develop"
-          uv pip install platformdirs pyyaml show-in-file-manager pytest
+          uv pip install --no-deps .
+          uv pip install platformdirs pyyaml show-in-file-manager huggingface_hub pytest
 
       - name: Run unit tests
         # `uv run --no-sync` finds the venv we just built and invokes python

@@ -1,0 +1,200 @@
+{
+    "tiny": {
+        "repo_id": "aTrain-core/faster-whisper-tiny",
+        "revision": "67ab6c7eafe6e9acff2eccdc14713d307d03a895",
+        "license": "MIT",
+        "type": "regular",
+        "repo_size": 78206636,
+        "repo_size_human": "75.54 MB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+            "config.json": "sha256:a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8",
+            "gitattributes.txt": "sha256:db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+            "model.bin": "sha256:dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1",
+            "tokenizer.json": "sha256:fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "sha256:34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+    },
+    "base": {
+        "repo_id": "aTrain-core/faster-whisper-base",
+        "revision": "60807e2d2c25d190ceda6bb43b6f8161f98e60da",
+        "license": "MIT",
+        "type": "regular",
+        "repo_size": 147885958,
+        "repo_size_human": "145.22 MB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+            "config.json": "sha256:56a6d8110d311f19c8f0471e562832c7527f146b567275bfca59fcf7c184da9a",
+            "gitattributes.txt": "sha256:db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+            "model.bin": "sha256:d01c3014881c9c6f3133c182f3d2887eb6ca1c789a7538c5c007196857a0a6a9",
+            "tokenizer.json": "sha256:fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "sha256:34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+    },
+    "small": {
+        "repo_id": "aTrain-core/faster-whisper-small",
+        "revision": "89b1eeb2b813706ff13f183df2ec32a2d62edc35",
+        "license": "MIT",
+        "type": "regular",
+        "repo_size": 486215389,
+        "repo_size_human": "483.55 MB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+            "config.json": "sha256:b55496ac7940a7ae47d2c01eab40edfd8701feec1229d9cce3b40014383fb828",
+            "gitattributes.txt": "sha256:db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+            "model.bin": "sha256:3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671",
+            "tokenizer.json": "sha256:fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "sha256:34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+    },
+    "medium": {
+        "repo_id": "aTrain-core/faster-whisper-medium",
+        "revision": "078ca51d83e03f67dac98af22e795bfec073c607",
+        "license": "MIT",
+        "type": "regular",
+        "repo_size": 1530574752,
+        "repo_size_human": "1.53 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+            "config.json": "sha256:3622a2ddc41ec0e0fd4e68c13c6830f03b90c38d89aaad184de02c8c642cf807",
+            "gitattributes.txt": "sha256:db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+            "model.bin": "sha256:9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae",
+            "tokenizer.json": "sha256:fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "sha256:34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+    },
+    "large-v1": {
+        "repo_id": "aTrain-core/faster-whisper-large-v1",
+        "revision": "73fcf082376acce64d434858364bad358da72b05",
+        "license": "MIT",
+        "type": "regular",
+        "repo_size": 3089581431,
+        "repo_size_human": "3.09 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+            "config.json": "sha256:98eb866f6d98c38224aa2f13fc9854f75fa01280714e945f7e803aa8b16e2b4b",
+            "gitattributes.txt": "sha256:db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+            "model.bin": "sha256:a3cce8081a5414206ab09a80aa410ebf9965feef52adafeead13f4a83398b1d1",
+            "tokenizer.json": "sha256:fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "sha256:34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+    },
+    "large-v2": {
+        "repo_id": "aTrain-core/faster-whisper-large-v2",
+        "revision": "3f454e1e3bfd71ded923a6e2d7246660a53c484e",
+        "license": "MIT",
+        "type": "regular",
+        "repo_size": 3089581875,
+        "repo_size_human": "3.09 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
+            "config.json": "sha256:d86b7a7664a12559d644aa210a32ce9a7e03913e794b7ea4fb7182de69e273a7",
+            "gitattributes.txt": "sha256:db7c0371f46f0840b8f25794c1e3321c9b5820a8cb6ba9694a46fc64b8fae5a6",
+            "model.bin": "sha256:bf2a9746382e1aa7ffff6b3a0d137ed9edbd9670c3b87e5d35f5e85e70d0333a",
+            "tokenizer.json": "sha256:fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+            "vocabulary.txt": "sha256:34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+        }
+    },
+    "large-v3": {
+        "repo_id": "aTrain-core/faster-whisper-large-v3",
+        "revision": "0112cb451cd959bde97139635e231e437d9d7a3a",
+        "license": "MIT",
+        "type": "regular",
+        "repo_size": 3090839273,
+        "repo_size_human": "3.09 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:39e96252229f5a3d0141dc81afb65a36fd205461ac21e5b70f2cd1248ef0082c",
+            "config.json": "sha256:a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9",
+            "model.bin": "sha256:69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1",
+            "preprocessor_config.json": "sha256:7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+            "tokenizer.json": "sha256:6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca",
+            "vocabulary.json": "sha256:c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+        }
+    },
+    "large-v3-turbo": {
+        "repo_id": "aTrain-core/faster-whisper-large-v3-turbo",
+        "revision": "df99141c9f5db0615d025664cff8949373a69593",
+        "license": "MIT",
+        "type": "regular",
+        "repo_size": 1621440951,
+        "repo_size_human": "1.62 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:0d0832b5df55de59c4613e6d953c2b21099d74df4debd94cd68d732550af3e46",
+            "config.json": "sha256:a0feddc18de0c285ed147e5483c8d1bc911bd45e23104ae0726d79594e7a6b1d",
+            "model.bin": "sha256:e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+            "preprocessor_config.json": "sha256:7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+            "tokenizer.json": "sha256:b3c8202bbf06d8ee4232c5984baa563784ac4737e2e7fdc42fa180200d3cfcdb",
+            "vocabulary.json": "sha256:c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+        }
+    },
+    "speaker-detection": {
+        "repo_id": "aTrain-core/speaker-detection",
+        "revision": "027e7a80b40a5e3e69cb83ccf901725b59a4063d",
+        "license": "CC-BY-4.0",
+        "repo_size": 33695573,
+        "repo_size_human": "32.1 MB",
+        "files": {
+            ".gitattributes": "sha256:5ca5d721264b62c84e55b912e7cdb019439cad30d41df8aeea3a23f9b1f86ef3",
+            "README.md": "sha256:2db91f9265bd81f1653ff088b5bff22bf6aebebea03328513af65501643f8a31",
+            "config.yaml": "sha256:5ce2bfa9a938dc132cec1172592d65173cbb8f444ea1e4133f10f9391de155be",
+            "diarization.gif": "sha256:0d925ad38995d89009260e493b0ae2e684c3e1397f495265ed841c45c4f73a35",
+            "embedding/README.md": "sha256:fa9e5105ae95edb231d841476cdb91eef4be0621c372ed4f7d3421294b5f8ad7",
+            "embedding/pytorch_model.bin": "sha256:6f10ff60898a1d185fa22e1d11e0bfa8a92efec811f11bca48cb8cafebefd929",
+            "plda/README.md": "sha256:e1316dbbeb3261431478d48ceebbd4bba395c3587e7b80c254dbab00f1209d0a",
+            "plda/plda.npz": "sha256:9b77bcd840692710dd3496f62ecfeed8d8e5f002fd991b785079b244eab7d255",
+            "plda/xvec_transform.npz": "sha256:325f1ce8e48f7e55e9c8aa47e05d2766b7c48c4b25b8de8dd751e7a4cc5fbe8f",
+            "segmentation/pytorch_model.bin": "sha256:7ad24338d844fb95985486eb1a464e32d229f6d7a03c9abe60f978bacf3f816e"
+        }
+    },
+    "faster-distil-english": {
+        "repo_id": "aTrain-core/faster-distil-whisper-large-v2",
+        "revision": "bcbc5787cacc46911e38af69b7f32adc48512983",
+        "license": "MIT",
+        "type": "distil",
+        "languages": [
+            "en"
+        ],
+        "repo_size": 1516112610,
+        "repo_size_human": "1.51 GB",
+        "files": {
+            ".gitattributes": "sha256:5200b9d86f3259876395b34b74017c850f7ad6f057ae70b59855a2243af5f147",
+            "README.md": "sha256:a3ca2b87586e693a4e7a96993a192b583e93ec62f752bd35c0b57c55fde23143",
+            "config.json": "sha256:721df87877126490ba0060bbecac3e75d66ea49daceed46c376c59680cdd922f",
+            "model.bin": "sha256:b415593cd109c0418d42ecb106c40ae45c8229cb4090e67db12243901e071ab3",
+            "preprocessor_config.json": "sha256:a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d",
+            "tokenizer.json": "sha256:56633aee7338579d67d4ee85651f79f690c640d13a652465e5afbe79c437dfa8",
+            "vocabulary.json": "sha256:5ad28279db5e546349708b9a74736e2c018737ac5a600f1048f1f26c99b85b47"
+        }
+    },
+    "large-norwegian": {
+        "repo_id": "aTrain-core/nb-faster-whisper-large",
+        "revision": "0c44886c8864cc9cf90d8726070ab392984c69db",
+        "license": "Apache-2.0",
+        "type": "regular",
+        "languages": [
+            "no",
+            "nn",
+            "en"
+        ],
+        "repo_size": 6178178615,
+        "repo_size_human": "5.75 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "README.md": "sha256:4bcf87ecfbbb8e07a01b21415a970c8b53a5283bf6872b657040d3f45c9241f7",
+            "config.json": "sha256:0acfd748948cec51bf37c2b5d3dd29835b909137aaa5f87a16429ad5e68c42fc",
+            "model.bin": "sha256:91a2575f6e703d0bf6d8ce228a490c40e2404e6275932c20ff137382f35f726d",
+            "preprocessor_config.json": "sha256:7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+            "pytorch_model.bin.index.json": "sha256:eb5a9052bc937f54106e897ee529946a465938802b20367655e4c53f8021b669",
+            "tokenizer.json": "sha256:5ceb4ad41152dcbf89d26884faaa71c04e2f0a12b2d2c88a12894eee1e55c189",
+            "vocabulary.json": "sha256:c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+        }
+    }
+}

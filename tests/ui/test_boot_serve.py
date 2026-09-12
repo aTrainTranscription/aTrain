@@ -25,6 +25,9 @@ def test_app_boots_and_serves():
     # on headless CI with no wakelock backend. WAKEPY_FAKE_SUCCESS is wakepy's
     # documented escape hatch for exactly this (CI / no D-Bus).
     env = {**os.environ, "WAKEPY_FAKE_SUCCESS": "1"}
+    # The subprocess must not look like it runs inside pytest: nicegui>=3's
+    # ui.run sees PYTEST_CURRENT_TEST and then requires the screen-test port.
+    env.pop("PYTEST_CURRENT_TEST", None)
     proc = subprocess.Popen(
         ["aTrain", "start", "--no-native"],
         stdout=subprocess.PIPE,
