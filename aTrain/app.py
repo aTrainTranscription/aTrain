@@ -21,6 +21,9 @@ def init():
 def start(
     native: Annotated[bool, Option(help="Run in a native window")] = True,
     reload: Annotated[bool, Option(help="Reload on code change")] = False,
+    port: Annotated[
+        int, Option(help="Starting port for the web server; next free port is used")
+    ] = 8080,
 ):
     """Start aTrain (requires GUI extras — install with `pip install 'aTrain[gui]'`)."""
     # Lazy imports: keep the GUI stack out of the import chain so headless
@@ -45,11 +48,17 @@ def start(
             "Install them with: pip install 'aTrain[gui]'"
         )
 
+    from aTrain.utils.ports import find_available_port
+
     print("Running aTrain")
+    selected_port = find_available_port(port)
+    if selected_port != port:
+        print(f"Port {port} is busy, using {selected_port} instead")
     if FLATPAK:
         ui.run(
             native=native,
             reload=reload,
+            port=selected_port,
             title="aTrain",
             favicon=cast(Path, files("aTrain") / "static" / "favicon.ico"),
             window_size=(1280, 720) if native else None,
@@ -59,6 +68,7 @@ def start(
             ui.run(
                 native=native,
                 reload=reload,
+                port=selected_port,
                 title="aTrain",
                 favicon=cast(Path, files("aTrain") / "static" / "favicon.ico"),
                 window_size=(1280, 720) if native else None,

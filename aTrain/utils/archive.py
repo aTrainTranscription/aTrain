@@ -3,6 +3,7 @@ import shutil
 import subprocess  # nosec B404 — used only with a static argv, never a shell
 import sys
 from importlib.resources import files
+from pathlib import Path
 
 import yaml
 from aTrain_core.globals import METADATA_FILENAME, TRANSCRIPT_DIR
@@ -69,6 +70,12 @@ def open_file_directory(file_id) -> None:
     """A function that opens the output from a past transcription in the file explorer."""
     file_id = "" if file_id == "all" else file_id
     directory = os.path.join(TRANSCRIPT_DIR, file_id)
+    open_directory_path(directory)
+
+
+def open_directory_path(directory: str | Path) -> None:
+    """Open an arbitrary local directory in the file explorer."""
+    directory = str(directory)
     if os.path.exists(directory):
         if sys.platform.startswith("linux"):
             subprocess.run(["xdg-open", directory], check=False)  # nosec B603 B607 — fixed argv, no shell, no user input

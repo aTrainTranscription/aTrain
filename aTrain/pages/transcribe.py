@@ -8,7 +8,11 @@ from aTrain.components.settings.speaker_count import input_speaker_count
 from aTrain.components.settings.speaker_detection import input_speaker_detection
 from aTrain.components.splash_screen import splash_screen
 from aTrain.layouts.base import base_layout
-from aTrain.utils.transcription import start_transcription, start_transcription_from_path
+from aTrain.utils.transcription import (
+    start_folder_transcription,
+    start_transcription,
+    start_transcription_from_path,
+)
 from aTrain_core.globals import FLATPAK, LINUX
 from nicegui import Client, ui
 
@@ -35,6 +39,12 @@ async def page(client: Client):
             if FLATPAK or LINUX:
 
                 async def start_from_selected():
+                    if getattr(file, "selection_mode", None) == "folder":
+                        if not getattr(file, "selected_folder_path", None):
+                            ui.notify("Please select a folder first", color="negative")
+                            return
+                        await start_folder_transcription(Path(file.selected_folder_path))
+                        return
                     if not getattr(file, "selected_path", None):
                         ui.notify("Please select a file first", color="negative")
                         return
@@ -44,7 +54,17 @@ async def page(client: Client):
 
                 start_btn = ui.button("Start", on_click=start_from_selected, color="dark")
             else:
-                start_btn = ui.button("Start", on_click=file.upload, color="dark")
+
+                async def start_from_upload_or_folder():
+                    if getattr(file, "selection_mode", None) == "folder":
+                        if not getattr(file, "selected_folder_path", None):
+                            ui.notify("Please select a folder first", color="negative")
+                            return
+                        await start_folder_transcription(Path(file.selected_folder_path))
+                        return
+                    file.upload()
+
+                start_btn = ui.button("Start", on_click=start_from_upload_or_folder, color="dark")
             start_btn.props("no-caps unelevated")
             advanced_settings(open=False)
 
