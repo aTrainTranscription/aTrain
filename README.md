@@ -1,5 +1,7 @@
 <img src="https://github.com/BANDAS-Center/aTrain/blob/main/docs/images/logo.svg" width="300" alt="Logo">
 
+> **Fork status.** This branch adds durable folder-batch transcription on top of current aTrain `develop`. It is offered upstream as [PR #179](https://github.com/aTrainTranscription/aTrain/pull/179). I am happy to rebase or merge it into the original project when the maintainers want that. Architecture: [docs/folder-batch.md](docs/folder-batch.md).
+
 ## Accessible Transcription of Interviews
 aTrain is a tool for automatically transcribing speech recordings utilizing state-of-the-art machine learning models without uploading any data. It was developed by researchers at the Business Analytics and Data Science-Center at the University of Graz and tested by researchers from the Know-Center Graz.
 
