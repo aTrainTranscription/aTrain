@@ -2,7 +2,7 @@ import os
 
 from aTrain_core.globals import FLATPAK, LINUX
 from aTrain_core.settings import load_formats
-from nicegui import ui
+from nicegui import app, ui
 
 
 class CustomUpload(ui.upload):
@@ -41,7 +41,7 @@ def input_file() -> CustomUpload:
             select_button.props("unelevated no-caps :ripple=false")
             select_button.classes("w-full h-full")
 
-    if not (FLATPAK or LINUX):
+    if not (FLATPAK or LINUX) or app.native.main_window is None:
         select_button.bind_text(uploader, "file_text")
         select_button.bind_icon(uploader, "file_icon")
         select_button.on_click(uploader.pick_files)

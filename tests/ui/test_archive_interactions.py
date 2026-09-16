@@ -1,16 +1,17 @@
 """Interaction tests for the /archive page.
 
 Drives the buttons on the archive page through the NiceGUI in-process
-`user` fixture and asserts the resulting filesystem state (since the
-click handlers call `delete_transcription` and `open_file_directory`
-directly). The `show` action invokes `subprocess.run(["xdg-open", ...])`
-which would actually try to open a file manager on CI, so the
-underlying utility is monkeypatched to a recorder.
+`user` fixture and asserts the resulting filesystem state. Directory-open and
+browser-download actions are monkeypatched to recorders so the tests do not
+start a file manager or download a file.
 """
+
+from unittest.mock import Mock
 
 import aTrain_core.globals as core_globals
 import pytest
 from aTrain.utils import archive as archive_utils
+from nicegui import app
 from nicegui.testing import User
 
 
@@ -45,6 +46,32 @@ def show_recorder(monkeypatch):
     return calls
 
 
+@pytest.fixture
+def download_recorder(monkeypatch):
+    """Replace browser downloads with a recorder.
+
+    Patch the persistent utility module before ``user`` imports the page and
+    binds the function alias.
+    """
+    calls = []
+    monkeypatch.setattr(
+        archive_utils, "download_file_directory", lambda file_id: calls.append(file_id)
+    )
+    return calls
+
+
+@pytest.fixture
+def browser_mode(monkeypatch):
+    """Render the page as a browser-only app rather than a native window."""
+    monkeypatch.setattr(app.native, "main_window", None)
+
+
+@pytest.fixture
+def native_mode(monkeypatch):
+    """Render the page as a native-window app."""
+    monkeypatch.setattr(app.native, "main_window", Mock())
+
+
 # --- list rendering --------------------------------------------------------
 
 
@@ -56,6 +83,7 @@ async def test_archive_empty_renders_headers(user: User, archive_root):
     # No transcriptions seeded → only the column-headers row is rendered.
     await user.should_not_see("delete")  # per-row delete button absent
     await user.should_not_see("open")
+    await user.should_not_see("download")
 
 
 async def test_archive_lists_seeded_transcriptions(user: User, archive_root):
@@ -97,17 +125,28 @@ async def test_archive_show_all_button_invokes_show_with_all(
     assert show_recorder == ["all"]
 
 
-async def test_archive_row_open_button_invokes_show_with_file_id(
-    archive_root, show_recorder, user: User
+async def test_archive_row_download_button_invokes_download_with_file_id(
+    archive_root, browser_mode, show_recorder, download_recorder, user: User
 ):
-    # One seeded row → exactly one per-row "open" button, so the find
-    # unambiguously targets that row's handler. Symmetric to the show-all
-    # test above — verifies the per-row click is wired to show(file_id).
+    # Browser mode exposes a download action instead of opening a directory
+    # on the host machine.
+    _seed(archive_root, "rec1")
+    await user.open("/archive")
+    await user.should_see("Archive", retries=100)
+    user.find("download").click()
+    assert download_recorder == ["rec1"]
+    assert show_recorder == []
+
+
+async def test_archive_row_open_button_invokes_show_with_file_id_in_native_mode(
+    archive_root, native_mode, show_recorder, download_recorder, user: User
+):
     _seed(archive_root, "rec1")
     await user.open("/archive")
     await user.should_see("Archive", retries=100)
     user.find("open").click()
     assert show_recorder == ["rec1"]
+    assert download_recorder == []
 
 
 # --- delete-all dialog ----------------------------------------------------

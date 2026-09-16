@@ -1,9 +1,10 @@
 from aTrain.components.dialogs.delete import dialog_delete
 from aTrain.layouts.base import base_layout
 from aTrain.utils.archive import delete_transcription as delete
+from aTrain.utils.archive import download_file_directory as download
 from aTrain.utils.archive import open_file_directory as show
 from aTrain.utils.archive import read_archive
-from nicegui import ui
+from nicegui import app, ui
 
 
 @ui.page("/archive")
@@ -38,11 +39,20 @@ def page():
                         ui.label(transcription["timestamp"]).classes("font-light")
                         ui.label(transcription["filename"]).classes("font-light")
                         with ui.row():
-                            btn_open = ui.button("open", color="dark")
+                            btn_open = ui.button(
+                                "download" if app.native.main_window is None else "open",
+                                color="dark",
+                            )
                             btn_open.props("no-caps size=0.7rem unelevated")
                             btn_delete = ui.button("delete", color="gray-100")
                             btn_delete.props("no-caps size=0.7rem unelevated")
-                btn_open.on_click(lambda t=transcription: show(t["file_id"]))
+                btn_open.on_click(
+                    lambda t=transcription: (
+                        download(t["file_id"])
+                        if app.native.main_window is None
+                        else show(t["file_id"])
+                    )
+                )
                 btn_delete.on_click(
                     lambda t=transcription: (delete(t["file_id"]), ui.navigate.reload())
                 )

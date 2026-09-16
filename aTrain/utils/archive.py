@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess  # nosec B404 — used only with a static argv, never a shell
 import sys
+import zipfile
 from importlib.resources import files
 
 import yaml
@@ -59,8 +60,11 @@ def delete_transcription(file_id) -> None:
     """A function that deletes a past transcription form the archive."""
     file_id = "" if file_id == "all" else file_id
     directory = os.path.join(TRANSCRIPT_DIR, file_id)
+    directory_zip = f"{directory}.zip"
     if os.path.exists(directory):
         shutil.rmtree(directory)
+    if os.path.exists(directory_zip):
+        os.remove(directory_zip)
     if not os.path.exists(TRANSCRIPT_DIR):
         os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
 
@@ -74,6 +78,27 @@ def open_file_directory(file_id) -> None:
             subprocess.run(["xdg-open", directory], check=False)  # nosec B603 B607 — fixed argv, no shell, no user input
         else:
             show_in_file_manager(directory)
+
+
+def download_file_directory(file_id) -> None:
+    """A function that zips a past transcription and lets the client download it."""
+    from nicegui import ui
+
+    file_id = "" if file_id == "all" else file_id
+    directory = os.path.join(TRANSCRIPT_DIR, file_id)
+    if os.path.exists(directory):
+        directory_zip = f"{directory}.zip"
+        if not os.path.exists(directory_zip):
+            # from https://stackabuse.com/creating-a-zip-archive-of-a-directory-in-python/
+            with zipfile.ZipFile(directory_zip, "w") as zipf:
+                for root, _dirs, files in os.walk(directory):
+                    for file in files:
+                        zipf.write(
+                            os.path.join(root, file),
+                            os.path.relpath(os.path.join(root, file), TRANSCRIPT_DIR),
+                        )
+
+        ui.download.file(os.path.join(directory, directory_zip))
 
 
 def load_faqs() -> list[dict]:
