@@ -14,7 +14,7 @@ from aTrain.utils.transcription import (
     start_transcription_from_path,
 )
 from aTrain_core.globals import FLATPAK, LINUX
-from nicegui import Client, ui
+from nicegui import Client, app, ui
 
 
 @ui.page("/")
@@ -36,7 +36,7 @@ async def page(client: Client):
                 "open_advanced_settings"
             )
             settings_btn.props("size=0.8rem unelevated no-caps icon=settings")
-            if FLATPAK or LINUX:
+            if (FLATPAK or LINUX) and app.native.main_window is not None:
 
                 async def start_from_selected():
                     if getattr(file, "selection_mode", None) == "folder":
@@ -68,6 +68,6 @@ async def page(client: Client):
             start_btn.props("no-caps unelevated")
             advanced_settings(open=False)
 
-    if not (FLATPAK or LINUX):
+    if not (FLATPAK or LINUX) or app.native.main_window is None:
         file.on_upload(start_transcription)
     settings_btn.on_click(lambda: advanced_settings(open=True))

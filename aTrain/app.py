@@ -21,9 +21,19 @@ def init():
 def start(
     native: Annotated[bool, Option(help="Run in a native window")] = True,
     reload: Annotated[bool, Option(help="Reload on code change")] = False,
+    show: Annotated[bool, Option(help="If no-native, open Browser tab.")] = True,
+    host: Annotated[
+        str | None,
+        Option(
+            help="Which IP to bind to (defaults to '127.0.0.1 in native mode, otherwise '0.0.0.0')."
+        ),
+    ] = None,
     port: Annotated[
-        int, Option(help="Starting port for the web server; next free port is used")
-    ] = 8080,
+        int | None,
+        Option(
+            help="Which port to bind to  (default: 8080 in no-native mode, and an automatically determined open port in native mode)."
+        ),
+    ] = None,
 ):
     """Start aTrain (requires GUI extras — install with `pip install 'aTrain[gui]'`)."""
     # Lazy imports: keep the GUI stack out of the import chain so headless
@@ -51,25 +61,25 @@ def start(
     from aTrain.utils.ports import find_available_port
 
     print("Running aTrain")
-    selected_port = find_available_port(port)
-    if selected_port != port:
-        print(f"Port {port} is busy, using {selected_port} instead")
-    if FLATPAK:
+    start_port = port if port is not None else 8080
+    selected_port = find_available_port(start_port)
+    if selected_port != start_port:
+        print(f"Port {start_port} is busy, using {selected_port} instead")
+
+    def ui_run(native: bool, reload: bool, show: bool, host: str | None, port: int):
         ui.run(
             native=native,
             reload=reload,
-            port=selected_port,
             title="aTrain",
             favicon=cast(Path, files("aTrain") / "static" / "favicon.ico"),
             window_size=(1280, 720) if native else None,
+            show=show,
+            host=host,
+            port=port,
         )
+
+    if FLATPAK:
+        ui_run(native, reload, show, host, selected_port)
     else:
         with keep.running():
-            ui.run(
-                native=native,
-                reload=reload,
-                port=selected_port,
-                title="aTrain",
-                favicon=cast(Path, files("aTrain") / "static" / "favicon.ico"),
-                window_size=(1280, 720) if native else None,
-            )
+            ui_run(native, reload, show, host, selected_port)

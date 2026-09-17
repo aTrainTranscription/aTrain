@@ -107,6 +107,30 @@ NVIDIA CUDA GPU support currently covers Windows and Debian-based Linux.
 When aTrain reaches PyPI (planned, not yet), the install command becomes
 `pip install aTrain` and `pip install 'aTrain[gui]'`.
 
+### Start in browser or server mode
+
+> ⚠️ **Experimental:** Running `aTrain start` as a headless browser/server app
+> is experimental. Some browser-mode functionality may still be incomplete.
+
+By default, `aTrain start` opens the native desktop app. Use `--no-native` to
+run it in browser mode. The following options are available for browser/server
+deployments:
+
+| Option | Description |
+| --- | --- |
+| `--no-native` | Run without a native desktop window. |
+| `--no-show` | Do not automatically open a browser tab. |
+| `--host HOST` | Bind to a specific IP address. |
+| `--port PORT` | Listen on a specific port. |
+
+For example, to run a server on port 8080 without opening a browser tab:
+
+```bash
+aTrain start --no-native --no-show --host 0.0.0.0 --port 8080
+```
+
+A guide for setting up aTrain as a service is available in the [Linux service guide](docs/linux/service.md).
+
 ### Transcribe from the command line
 
 Default settings:
