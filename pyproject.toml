@@ -52,7 +52,7 @@ gui = [
   "pywebview==6.1",
   "pywebview[GTK]; sys_platform == 'linux'",
   "show-in-file-manager==1.1.4",
-  "wakepy==0.7.2",
+  "wakepy==1.0.0",
   "dask; sys_platform == 'linux'",
 ]
 

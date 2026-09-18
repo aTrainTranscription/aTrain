@@ -303,7 +303,7 @@ requires-dist = [
     { name = "torchaudio", marker = "sys_platform == 'win32'", specifier = "==2.9.1+cu128", index = "https://download.pytorch.org/whl/cu128" },
     { name = "transformers", specifier = "==4.57.3" },
     { name = "typer", specifier = "==0.16.0" },
-    { name = "wakepy", marker = "extra == 'gui'", specifier = "==0.7.2" },
+    { name = "wakepy", marker = "extra == 'gui'", specifier = "==1.0.0" },
     { name = "werkzeug", specifier = "==3.1.8" },
 ]
 provides-extras = ["gui"]
@@ -4730,13 +4730,14 @@ wheels = [
 
 [[package]]
 name = "wakepy"
-version = "0.7.2"
+version = "1.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "jeepney", marker = "sys_platform == 'linux'" },
+    { name = "jeepney", marker = "platform_system == 'DragonFly' or platform_system == 'FreeBSD' or platform_system == 'Minix' or platform_system == 'NetBSD' or platform_system == 'OpenBSD' or platform_system == 'SunOS' or sys_platform == 'aix' or sys_platform == 'linux'" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/d6/13/78e45a3d2cd754f95d2fca5aece046676da559b8e34e294e69bb441f18fd/wakepy-1.0.0.tar.gz", hash = "sha256:a9425e8e77e89bccfe24a70f33ecd8596b474c75ddac79310cd54f2bc92210e3", size = 323693, upload-time = "2026-02-07T21:20:32.244Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3d/4b/ddd29056ecae39f897d1c5b4e87d439dc24f7cc9f9c299b6b272a0152afd/wakepy-0.7.2-py3-none-any.whl", hash = "sha256:7fb11ca7ffcc9312abf3ada086455a442c91b90b798fb888bc78b91cc311c0fc", size = 15771, upload-time = "2023-09-27T07:19:40.429Z" },
+    { url = "https://files.pythonhosted.org/packages/52/33/e692c64d00b7a0d203191b1a20c81c32dca93da38345f6f1ad91426e36fc/wakepy-1.0.0-py3-none-any.whl", hash = "sha256:d5497640791517982cf66d894c502e9fa5133dc75c4a45d3b18a3495d1cf8afb", size = 70336, upload-time = "2026-02-07T21:20:31.027Z" },
 ]
 
 [[package]]
