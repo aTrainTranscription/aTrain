@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           # New uv.lock invalidates the cache automatically.
@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -74,7 +74,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -112,7 +112,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -151,7 +151,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -190,7 +190,7 @@ jobs:
           sudo apt-get install -y libcairo2-dev libgirepository1.0-dev
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -231,7 +231,7 @@ jobs:
           sudo apt-get install -y libcairo2-dev libgirepository1.0-dev
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -267,7 +267,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v8.1.0
+        uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
