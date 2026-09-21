@@ -16,6 +16,9 @@ Signing runs in the release workflow (`.github/workflows/release.yml`) on a
 tagged commit. Every signing request is approved manually by an approver
 before the certificate is applied.
 
+How to check a downloaded release against the published checksums and this
+signature: [Verifying a release](verifying-releases.md).
+
 ## Roles
 
 - **Authors** - trusted to change the source code without additional review:

@@ -43,7 +43,7 @@ def test_app_boots_and_serves():
                 output = proc.stdout.read() if proc.stdout else ""
                 raise AssertionError(f"aTrain exited early (code {proc.returncode}):\n{output}")
             try:
-                with urllib.request.urlopen(URL, timeout=2) as response:  # noqa: S310
+                with urllib.request.urlopen(URL, timeout=2) as response:
                     assert response.status == 200
                     body = response.read().decode("utf-8", "replace").lower()
                     assert "atrain" in body or "nicegui" in body

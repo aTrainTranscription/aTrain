@@ -18,7 +18,10 @@ source with pip.
 Additional download types are listed on the
 [university download page](https://business-analytics.uni-graz.at/de/forschung/atrain/download/).
 
-How release builds are signed: see the [Code signing policy](code-signing-policy.md).
+Rolling aTrain out to managed machines? See
+[Windows deployment](deployment-windows.md).
+
+How release builds are signed: see the [Code signing policy](code-signing-policy.md). How to check a downloaded release: see [Verifying a release](verifying-releases.md).
 
 ## Install from source with pip
 

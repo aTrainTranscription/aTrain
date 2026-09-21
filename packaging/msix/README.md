@@ -20,9 +20,9 @@ with `makeappx.exe`.
 
 ## Assets
 
-`makeappx.exe` requires PNG assets referenced by the manifest
+`makeappx.exe` requires the PNG assets referenced by the manifest
 (`StoreLogo.png`, `Square150x150Logo.png`, `Square44x44Logo.png`,
-`Wide310x150Logo.png`). Placeholder assets are placed in
-`packaging/msix/Assets/` and copied into the PyInstaller output during
-packaging. They should be replaced with the aTrain brand marks Armin
-already has for the MS Store submission before the first signed release.
+`Wide310x150Logo.png`). `packaging/msix/Assets/` holds the aTrain brand
+assets, including the scale and targetsize variants that makeappx picks
+up by name. The folder is copied into the PyInstaller output during
+packaging.

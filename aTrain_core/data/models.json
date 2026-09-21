@@ -1,8 +1,12 @@
 {
     "tiny": {
+        "display_name": "tiny",
+        "group": "All others",
+        "info": "The smallest and fastest model; best for quick drafts when accuracy is less important.",
         "repo_id": "aTrain-core/faster-whisper-tiny",
         "revision": "67ab6c7eafe6e9acff2eccdc14713d307d03a895",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 78206636,
         "repo_size_human": "75.54 MB",
@@ -17,9 +21,13 @@
         }
     },
     "base": {
+        "display_name": "base",
+        "group": "All others",
+        "info": "A small model with better accuracy than tiny.",
         "repo_id": "aTrain-core/faster-whisper-base",
         "revision": "60807e2d2c25d190ceda6bb43b6f8161f98e60da",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 147885958,
         "repo_size_human": "145.22 MB",
@@ -34,9 +42,13 @@
         }
     },
     "small": {
+        "display_name": "small",
+        "group": "All others",
+        "info": "A balanced model for everyday transcription.",
         "repo_id": "aTrain-core/faster-whisper-small",
         "revision": "89b1eeb2b813706ff13f183df2ec32a2d62edc35",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 486215389,
         "repo_size_human": "483.55 MB",
@@ -51,9 +63,13 @@
         }
     },
     "medium": {
+        "display_name": "medium",
+        "group": "All others",
+        "info": "A larger model that prioritizes accuracy over speed.",
         "repo_id": "aTrain-core/faster-whisper-medium",
         "revision": "078ca51d83e03f67dac98af22e795bfec073c607",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 1530574752,
         "repo_size_human": "1.53 GB",
@@ -68,9 +84,13 @@
         }
     },
     "large-v1": {
+        "display_name": "large-v1",
+        "group": "All others",
+        "info": "The first large Whisper model generation.",
         "repo_id": "aTrain-core/faster-whisper-large-v1",
         "revision": "73fcf082376acce64d434858364bad358da72b05",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 3089581431,
         "repo_size_human": "3.09 GB",
@@ -85,9 +105,13 @@
         }
     },
     "large-v2": {
+        "display_name": "large-v2",
+        "group": "All others",
+        "info": "The second large Whisper model generation.",
         "repo_id": "aTrain-core/faster-whisper-large-v2",
         "revision": "3f454e1e3bfd71ded923a6e2d7246660a53c484e",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 3089581875,
         "repo_size_human": "3.09 GB",
@@ -102,9 +126,13 @@
         }
     },
     "large-v3": {
+        "display_name": "large-v3",
+        "group": "Recommended",
+        "info": "Recommended for high general transcription accuracy in all supported languages.",
         "repo_id": "aTrain-core/faster-whisper-large-v3",
         "revision": "0112cb451cd959bde97139635e231e437d9d7a3a",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 3090839273,
         "repo_size_human": "3.09 GB",
@@ -119,9 +147,13 @@
         }
     },
     "large-v3-turbo": {
+        "display_name": "large-v3-turbo",
+        "group": "Recommended",
+        "info": "Recommended when you need faster transcription with strong accuracy in all supported languages.",
         "repo_id": "aTrain-core/faster-whisper-large-v3-turbo",
         "revision": "df99141c9f5db0615d025664cff8949373a69593",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 1621440951,
         "repo_size_human": "1.62 GB",
@@ -136,9 +168,13 @@
         }
     },
     "speaker-detection": {
+        "display_name": "speaker-detection",
+        "group": "All others",
+        "info": "Identifies speakers in a recording when speaker detection is enabled.",
         "repo_id": "aTrain-core/speaker-detection",
         "revision": "027e7a80b40a5e3e69cb83ccf901725b59a4063d",
         "license": "CC-BY-4.0",
+        "backend": "pyannote",
         "repo_size": 33695573,
         "repo_size_human": "32.1 MB",
         "files": {
@@ -155,9 +191,13 @@
         }
     },
     "faster-distil-english": {
+        "display_name": "faster-distil-english",
+        "group": "Language Specific",
+        "info": "Optimized for faster English-only transcription.",
         "repo_id": "aTrain-core/faster-distil-whisper-large-v2",
         "revision": "bcbc5787cacc46911e38af69b7f32adc48512983",
         "license": "MIT",
+        "backend": "faster-whisper",
         "type": "distil",
         "languages": [
             "en"
@@ -175,9 +215,13 @@
         }
     },
     "large-norwegian": {
+        "display_name": "large-norwegian",
+        "group": "Language Specific",
+        "info": "Optimized for Norwegian Bokmål, Norwegian Nynorsk transcription.",
         "repo_id": "aTrain-core/nb-faster-whisper-large",
         "revision": "0c44886c8864cc9cf90d8726070ab392984c69db",
         "license": "Apache-2.0",
+        "backend": "faster-whisper",
         "type": "regular",
         "languages": [
             "no",
@@ -194,6 +238,71 @@
             "preprocessor_config.json": "sha256:7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
             "pytorch_model.bin.index.json": "sha256:eb5a9052bc937f54106e897ee529946a465938802b20367655e4c53f8021b669",
             "tokenizer.json": "sha256:5ceb4ad41152dcbf89d26884faaa71c04e2f0a12b2d2c88a12894eee1e55c189",
+            "vocabulary.json": "sha256:c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
+        }
+    },
+    "crisperwhisper-v2-large": {
+        "display_name": "Verbatim with CrisperWhisper2 (large)",
+        "group": "Recommended",
+        "info": "Specialized for verbatim transcription in its supported languages.",
+        "repo_id": "aTrain-core/CrisperWhisper2_large",
+        "revision": "20638bbea0625a8b0883c445a25dbe21f94c62aa",
+        "license": "LicenseRef-Nyra-NonCommercial-Research",
+        "backend": "crisper-transformers",
+        "type": "regular",
+        "languages": [
+            "en",
+            "de",
+            "es",
+            "nl",
+            "fr",
+            "it",
+            "pl",
+            "pt",
+            "ru",
+            "sv"
+        ],
+        "repo_size": 3086843114,
+        "repo_size_human": "3.09 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "LICENSE.md": "sha256:42f43bf4dc72ef422f91f6ca143f4514e21a68b353940d99091c1addcd0aee79",
+            "README.md": "sha256:ddc82a301a1b59035eefcc1a8b2ec90d56257104df7365b00493c58135a6b029",
+            "added_tokens.json": "sha256:54e87fd086baa530e05082c11feacf9df5439453c5fae279611f3099ec844dc5",
+            "config.json": "sha256:efd226b2b7a57109ef2ecdde8f9ccc95d44ee5f9057847d1478af9315c5834bd",
+            "generation_config.json": "sha256:07cc1f4e95f03c10f47939f69579efbe19e3ccd1ce901bb01b32600038618a88",
+            "merges.txt": "sha256:2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6",
+            "model.safetensors": "sha256:f097f853b6992e66fcae802a15770a8242670351198d68dad577db3209fe3fcc",
+            "normalizer.json": "sha256:bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd",
+            "preprocessor_config.json": "sha256:994838f1fa6462c8b9b3c90edada831f11f3dd8b4664634e18f4694d005c9dbf",
+            "special_tokens_map.json": "sha256:e67ae3a0aaa99abcd9f187138e12db1f65c16a14761c50ef10eef2c174a7a691",
+            "tokenizer.json": "sha256:567da8c8a5b7df02555deecfcb3a7f6acd315844dc5e2fde883fe7ced8467317",
+            "tokenizer_config.json": "sha256:5fa089926c8c2535c622d09a5992fb57c63cbc3514e18cf40bc535bee2a23827",
+            "vocab.json": "sha256:8f680bba319e01a653d2e8a5dbc17a9157179e0576e6ce74ce0c06356c6e24f9"
+        }
+    },
+    "large-swedish": {
+        "display_name": "large-swedish",
+        "group": "Language Specific",
+        "info": "Optimized for Swedish transcription.",
+        "repo_id": "aTrain-core/KB-WhisperSwedish",
+        "revision": "824bf78765b22c7e999ea3ec91629c7169f69bcf",
+        "license": "Apache-2.0",
+        "backend": "faster-whisper",
+        "type": "regular",
+        "languages": [
+            "sv"
+        ],
+        "repo_size": 3092302292,
+        "repo_size_human": "3.09 GB",
+        "files": {
+            ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+            "LICENSE": "sha256:cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+            "README.md": "sha256:ee5e83597858c1e6f6baa808e449bd8e7b9e8052247bf6808ece549652fe7c80",
+            "config.json": "sha256:48be972f94e790720e32b8711ad54860b1d06d5434079d3fcdfdfe1254d29c69",
+            "model.bin": "sha256:69ed56887f68417f651d50fd5f225c60dfc0f9515bef85bb0f1404825c6f01de",
+            "preprocessor_config.json": "sha256:7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711",
+            "tokenizer.json": "sha256:d06d0c877b5143ccdcb761407d5650b18a6afc33f9261fcb7e0dd44acbc1c262",
             "vocabulary.json": "sha256:c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
         }
     }

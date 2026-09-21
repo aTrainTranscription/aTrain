@@ -32,15 +32,17 @@ def download_all_models():
 
 
 def download_model(model_path: Path, model_info: dict, progress: DictProxy | None = None):
-    # http_get is patched module-wide so the byte progress of every file lands
-    # in one bar. It has to be restored afterwards: the pool worker outlives this
+    # http_get and xet_get are patched module-wide so the byte progress of
+    # every file lands in one bar, whichever path the Hub serves it through. It has to be restored afterwards: the pool worker outlives this
     # call, and the proxy behind the bar dies with the dialog that opened it.
     original_http_get = file_download.http_get
+    original_xet_get = file_download.xet_get
     if progress:
         repo_size = model_info["repo_size"]
         progress["total"] = repo_size
         tqdm_bar = custom_tqdm(total=repo_size, progress=progress)
         file_download.http_get = partial(original_http_get, _tqdm_bar=tqdm_bar)  # ty: ignore
+        file_download.xet_get = partial(original_xet_get, _tqdm_bar=tqdm_bar)  # ty: ignore
 
     try:
         snapshot_download(
@@ -52,6 +54,7 @@ def download_model(model_path: Path, model_info: dict, progress: DictProxy | Non
         )
     finally:
         file_download.http_get = original_http_get
+        file_download.xet_get = original_xet_get
 
 
 def get_model(model: str, progress: DictProxy | None = None) -> Path:

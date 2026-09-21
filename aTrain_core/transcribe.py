@@ -73,12 +73,13 @@ def prepare_transcription(file: Path) -> tuple[Path, str, str]:
 def transcribe(settings: Settings):
     """Transcribes audio file with specified parameters."""
 
+    backend = load_model_config_file()[settings.model]["backend"]
     write_logfile("Directory created", settings.file_id)
     audio_array, audio_duration = load_audio(settings)
     create_metadata(settings, audio_duration)
     model_path = get_model(settings.model)
     write_logfile("Model loaded", settings.file_id)
-    if settings.device == Device.GPU:
+    if settings.device == Device.GPU or backend == "crisper-transformers":
         write_logfile("Transcribing in seperate process", settings.file_id)
         transcript = run_transcription_in_process(settings, model_path, audio_array)
     elif settings.device == Device.CPU:
@@ -86,6 +87,10 @@ def transcribe(settings: Settings):
         transcript = run_transcription(settings, model_path, audio_array)
     if settings.speaker_detection and transcript:
         transcript = run_speaker_detection(settings, audio_duration, audio_array, transcript)
+    if backend == "crisper-transformers" and transcript:
+        from aTrain_core.backends.crisper_transformers import group_word_segments
+
+        transcript = {"segments": group_word_segments(transcript["segments"])}
     create_output_files(transcript, settings.speaker_detection, settings.file_id)
     write_logfile("No speaker detection. Created output files", settings.file_id)
     add_processing_time_to_metadata(settings.file_id)
@@ -116,15 +121,32 @@ def run_transcription(
     audio_array: np.ndarray,
     returnDict: DictProxy | dict = {},
 ) -> dict | None:
-    """Run a transcription using a whisper model."""
+    """Run a transcription through the backend selected by the model config."""
+    backend = None
     try:
+        model_info = load_model_config_file()[settings.model]
+        backend = model_info["backend"]
+        if backend == "crisper-transformers":
+            from aTrain_core.backends.crisper_transformers import transcribe as transcribe_crisper
+
+            write_logfile("Transcribing with CrisperWhisper in verbatim mode.", settings.file_id)
+            transcript = transcribe_crisper(settings, model_path, audio_array)
+            write_logfile("Transcription successful", settings.file_id)
+            if settings.device == Device.CPU:
+                returnDict["transcript"] = transcript
+                return transcript
+            returnDict["transcript"] = transcript
+            os._exit(0)
+        if backend != "faster-whisper":
+            raise ValueError(f"Unsupported transcription backend: {backend}")
+
         whisper_model = WhisperModel(
             model_size_or_path=model_path.as_posix(),
             device="cuda" if settings.device == Device.GPU else "cpu",
             compute_type=settings.compute_type.value,
             cpu_threads=settings.cpu_threads,
         )
-        model_type = load_model_config_file()[settings.model]["type"]
+        model_type = model_info["type"]
         write_logfile(f"Transcribing with {model_type} model.", settings.file_id)
 
         segments, info = whisper_model.transcribe(
@@ -151,10 +173,9 @@ def run_transcription(
             os._exit(0)
 
     except Exception as error:
-        if settings.device == Device.CPU:
+        if settings.device == Device.CPU and backend != "crisper-transformers":
             raise error
-        if settings.device == Device.GPU:
-            returnDict["error"] = error
+        returnDict["error"] = error
 
 
 def transcription_with_progress_bar(segments, info, progress: DictProxy | dict):

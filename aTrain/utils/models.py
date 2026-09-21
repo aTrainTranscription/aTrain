@@ -18,6 +18,7 @@ from nicegui.run import setup as setup_process_pool
 def read_downloaded_models() -> list:
     # The two dirs coincide when REQUIRED_MODELS_DIR falls back to MODELS_DIR
     # (no bundled models); dedupe so models aren't listed twice.
+    models_config = load_model_config_file()
     directories_to_search = list(dict.fromkeys([MODELS_DIR, REQUIRED_MODELS_DIR]))
     all_downloaded_models = []
 
@@ -31,9 +32,13 @@ def read_downloaded_models() -> list:
         for directory_name in all_file_directories:
             directory_path = os.path.join(directory, directory_name)
             for file in os.listdir(directory_path):
-                # model only with .bin file available
-                if file.endswith(".bin") and directory_name in list(
-                    load_model_config_file().keys()
+                if file.endswith(".bin") and directory_name in list(models_config.keys()):
+                    all_downloaded_models.append(directory_name)
+                    break
+                if (
+                    file == "model.safetensors"
+                    and models_config.get(directory_name, {}).get("backend")
+                    == "crisper-transformers"
                 ):
                     all_downloaded_models.append(directory_name)
                     break
@@ -57,9 +62,13 @@ def read_model_metadata() -> list:
     for model in all_models:
         model_info = {
             "model": model,
+            "display_name": model_metadata[model].get("display_name", model),
+            "group": model_metadata[model].get("group", "All others"),
             "size": model_metadata[model]["repo_size_human"],
             "downloaded": model in downloaded_models,
         }
+        if info := model_metadata[model].get("info"):
+            model_info["info"] = info
         all_models_metadata.append(model_info)
 
     all_models_metadata = sorted(all_models_metadata, key=lambda x: x["downloaded"], reverse=True)

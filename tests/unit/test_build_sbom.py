@@ -197,6 +197,24 @@ def test_the_model_licence_is_the_one_models_json_pins(models):
     assert tiny["licenses"] == [{"license": {"id": "MIT", "acknowledgement": "declared"}}]
 
 
+def test_custom_model_licence_uses_an_expression(models):
+    models["custom"] = {
+        "repo_id": "aTrain-core/custom-model",
+        "revision": "custom-revision",
+        "license": "LicenseRef-Nyra-NonCommercial-Research",
+        "repo_size_human": "1 MB",
+    }
+
+    custom = next(c for c in build_sbom.model_components(models, set()) if "custom" in c["name"])
+
+    assert custom["licenses"] == [
+        {
+            "expression": "LicenseRef-Nyra-NonCommercial-Research",
+            "acknowledgement": "declared",
+        }
+    ]
+
+
 # --- the shipped models.json -----------------------------------------------
 
 

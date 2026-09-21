@@ -1,0 +1,61 @@
+# Dependabot version updates (#188). Alerts are configured separately in the
+# repository's security settings; this file only controls update PRs.
+version: 2
+updates:
+  # Python dependencies: pyproject.toml + uv.lock, updated together. The uv
+  # ecosystem is required here - "pip" would leave uv.lock behind and every
+  # PR would fail `uv sync --locked` in CI.
+  - package-ecosystem: "uv"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    labels:
+      - "dependencies"
+      - "python:uv"
+    commit-message:
+      prefix: "build"
+    open-pull-requests-limit: 5
+    groups:
+      # One PR per week for all minor and patch bumps. Majors stay separate
+      # so they get looked at individually.
+      python-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # torch, torchaudio and torchvision are pinned in lockstep with +cu128
+      # wheels from the PyTorch index (see [tool.uv.sources]) and a bump needs
+      # a GPU test first. They are updated by hand.
+      - dependency-name: "torch"
+      - dependency-name: "torchaudio"
+      - dependency-name: "torchvision"
+
+  # GitHub Actions in .github/workflows/*.yml.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "develop"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"
+    groups:
+      # Minor and patch bumps in one PR. Majors stay separate: three of the
+      # actions only run in release.yml, which PR CI never exercises, so a
+      # major bump needs a look at that workflow before it is merged.
+      github-actions-minor-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"

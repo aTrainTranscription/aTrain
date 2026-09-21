@@ -20,8 +20,15 @@ def _fake_metadata():
     downloaded (tiny). Both are outside REQUIRED_MODELS so the page
     actually renders them as rows."""
     return [
-        {"model": "tiny", "size": "75 MB", "downloaded": False},
-        {"model": "large-v1", "size": "3 GB", "downloaded": True},
+        {
+            "model": "tiny",
+            "display_name": "Tiny",
+            "group": "All others",
+            "info": "A test model description.",
+            "size": "75 MB",
+            "downloaded": False,
+        },
+        {"model": "large-v1", "group": "All others", "size": "3 GB", "downloaded": True},
     ]
 
 
@@ -54,7 +61,12 @@ def mocked_models(monkeypatch):
 async def test_models_page_lists_non_required_models(mocked_models, user: User):
     await user.open("/models")
     await user.should_see("Model Manager", retries=100)
-    await user.should_see("tiny")
+    await user.should_see("All others")
+    user.find(marker="model_group_all_others").click()
+    await user.should_see("Tiny")
+    await user.should_see(marker="model_info_tiny")
+    await user.should_see("A test model description.")
+    await user.should_not_see(marker="model_info_large-v1")
     await user.should_see("large-v1")
     await user.should_see("75 MB")
     await user.should_see("3 GB")
@@ -64,6 +76,7 @@ async def test_download_button_invokes_download_model(mocked_models, user: User)
     download_calls, _ = mocked_models
     await user.open("/models")
     await user.should_see("Model Manager", retries=100)
+    user.find(marker="model_group_all_others").click()
     # Exactly one row is not-downloaded → exactly one "Download" button.
     # kind= keeps the header label "Download Size" out of the match set:
     # nicegui>=3 clicks only the lowest-id match instead of all matches,
@@ -72,10 +85,81 @@ async def test_download_button_invokes_download_model(mocked_models, user: User)
     assert download_calls == ["tiny"]
 
 
+@pytest.fixture
+def unknown_group_metadata(monkeypatch):
+    monkeypatch.setattr(
+        models_utils,
+        "read_model_metadata",
+        lambda: [
+            {
+                "model": "future-model",
+                "group": "Future group",
+                "size": "1 GB",
+                "downloaded": False,
+            }
+        ],
+    )
+
+
+async def test_model_with_unknown_group_is_listed_under_all_others(
+    unknown_group_metadata, user: User
+):
+    await user.open("/models")
+    await user.should_see("Model Manager", retries=100)
+    user.find(marker="model_group_all_others").click()
+    await user.should_see("future-model")
+
+
+@pytest.fixture
+def crisperwhisper_metadata(monkeypatch):
+    monkeypatch.setattr(
+        models_utils,
+        "read_model_metadata",
+        lambda: [
+            {
+                "model": "crisperwhisper-v2-large",
+                "group": "Language Specific",
+                "size": "3.09 GB",
+                "downloaded": False,
+            }
+        ],
+    )
+
+
+async def test_crisperwhisper_download_requires_license_acceptance(
+    mocked_models, crisperwhisper_metadata, user: User
+):
+    download_calls, _ = mocked_models
+    await user.open("/models")
+    await user.should_see("Model Manager", retries=100)
+    user.find(marker="model_group_language_specific").click()
+    user.find(kind=ui.button, content="Download").click()
+    await user.should_see("CrisperWhisper license confirmation")
+    assert download_calls == []
+
+    user.find(kind=ui.button, content="Accept").click()
+    assert download_calls == ["crisperwhisper-v2-large"]
+
+
+async def test_crisperwhisper_license_cancel_does_not_start_download(
+    mocked_models, crisperwhisper_metadata, user: User
+):
+    download_calls, _ = mocked_models
+    await user.open("/models")
+    await user.should_see("Model Manager", retries=100)
+    user.find(marker="model_group_language_specific").click()
+    user.find(kind=ui.button, content="Download").click()
+    await user.should_see("CrisperWhisper license confirmation")
+
+    user.find(kind=ui.button, content="Cancel").click()
+    assert download_calls == []
+
+
 async def test_delete_button_invokes_remove_model(mocked_models, user: User):
     _, remove_calls = mocked_models
     await user.open("/models")
     await user.should_see("Model Manager", retries=100)
+    user.find(marker="model_group_all_others").click()
     # Exactly one row is downloaded → exactly one "Delete" button.
     user.find("Delete").click()
     assert remove_calls == ["large-v1"]
@@ -106,8 +190,13 @@ def model_dirs(monkeypatch, tmp_path):
 
 def _metadata_with_turbo():
     return [
-        {"model": "large-v3-turbo", "size": "1.6 GB", "downloaded": False},
-        {"model": "tiny", "size": "75 MB", "downloaded": False},
+        {
+            "model": "large-v3-turbo",
+            "group": "Recommended",
+            "size": "1.6 GB",
+            "downloaded": False,
+        },
+        {"model": "tiny", "group": "All others", "size": "75 MB", "downloaded": False},
     ]
 
 
@@ -130,6 +219,7 @@ async def test_bundled_model_is_not_offered_for_download(model_dirs, turbo_metad
 
     await user.open("/models")
     await user.should_see("Model Manager", retries=100)
+    user.find(marker="model_group_all_others").click()
     await user.should_see("tiny")
     await user.should_not_see("large-v3-turbo")
 
