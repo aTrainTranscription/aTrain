@@ -29,4 +29,4 @@ def test_update_progress_reads_live_dict():
     app.storage.general["speaker_detection"] = False
     process.update_progress({"current": 1, "total": 4, "task": "Transcribe"}, datetime.now())
     assert app.storage.general["progress"] == 0.25
-    assert app.storage.general["task_number"] == "2/2"
+    assert app.storage.general["task_number"] == "Task 2/2"

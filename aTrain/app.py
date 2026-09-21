@@ -58,9 +58,15 @@ def start(
             "Install them with: pip install 'aTrain[gui]'"
         )
 
-    print("Running aTrain")
+    from aTrain.utils.ports import find_available_port
 
-    def ui_run(native: bool, reload: bool, show: bool, host: str, port: int):
+    print("Running aTrain")
+    start_port = port if port is not None else 8080
+    selected_port = find_available_port(start_port)
+    if selected_port != start_port:
+        print(f"Port {start_port} is busy, using {selected_port} instead")
+
+    def ui_run(native: bool, reload: bool, show: bool, host: str | None, port: int):
         ui.run(
             native=native,
             reload=reload,
@@ -73,7 +79,7 @@ def start(
         )
 
     if FLATPAK:
-        ui_run(native, reload, show, host, port)
+        ui_run(native, reload, show, host, selected_port)
     else:
         with keep.running():
-            ui_run(native, reload, show, host, port)
+            ui_run(native, reload, show, host, selected_port)
