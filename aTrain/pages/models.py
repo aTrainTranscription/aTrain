@@ -5,6 +5,7 @@ from aTrain_core.globals import is_packaged_model
 from nicegui import ui
 
 MODEL_GROUPS = ("Recommended", "Language Specific", "All others")
+MODEL_GRID_COLUMNS = "40px minmax(0, 1fr) 120px 96px"
 
 
 @ui.page("/models")
@@ -29,12 +30,16 @@ def page():
                 continue
             with (
                 ui.expansion(group, value=group == "Recommended")
-                .classes("w-full")
+                .classes("w-full overflow-hidden rounded-lg border border-gray-200 shadow-sm")
+                .props(
+                    'header-class="bg-gray-100 py-1 text-base font-bold text-dark '
+                    'border-l-4 border-gray-700" expand-icon-class="text-dark"'
+                )
                 .mark(f"model_group_{group.lower().replace(' ', '_')}")
             ):
                 with ui.list().classes("w-full").props("separator"):
                     with ui.item():
-                        with ui.grid(columns="minmax(0, 60px) 1fr 1fr 1fr") as grid:
+                        with ui.grid(columns=MODEL_GRID_COLUMNS) as grid:
                             grid.classes("w-full text-grey text-xs items-end")
                             ui.label("#")
                             ui.label("Model")
@@ -42,7 +47,7 @@ def page():
                             ui.label("Actions")
                     for i, model in enumerate(group_models):
                         with ui.item().classes("hover:bg-gray-100"):
-                            with ui.grid(columns="minmax(0, 60px) 1fr 1fr 1fr") as grid:
+                            with ui.grid(columns=MODEL_GRID_COLUMNS) as grid:
                                 grid.classes("w-full items-center")
                                 ui.label(str(i + 1)).classes("font-light")
                                 with ui.row(align_items="center").classes("gap-1"):
