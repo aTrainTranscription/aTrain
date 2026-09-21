@@ -49,7 +49,7 @@ def atrain_server() -> Generator[str, None, None]:
                 output = proc.stdout.read() if proc.stdout else ""
                 raise RuntimeError(f"aTrain exited early (code {proc.returncode}):\n{output}")
             try:
-                with urllib.request.urlopen(BASE_URL, timeout=2) as response:  # noqa: S310
+                with urllib.request.urlopen(BASE_URL, timeout=2) as response:
                     if response.status == 200:
                         yield BASE_URL
                         return

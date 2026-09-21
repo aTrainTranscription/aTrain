@@ -23,11 +23,11 @@ dependencies = [
   "faster-whisper==1.2.1",
   # CrisperWhisper v2 uses this Transformers-only path. Do not add its
   # CTranslate2 extra (a incompatible fork of Ctranslate2 used by faster-whisper):
-  "crisperwhisper[transformers]==2.0.2",
+  "crisperwhisper[transformers]==2.0.3",
   "transformers==4.57.3",
   "pandas==2.3.3",
-  "pyannote.audio==4.0.4",
-  "numpy==2.2.2",
+  "pyannote.audio==4.0.7",
+  "numpy==2.4.6",
   "werkzeug==3.1.8",
   # transformers 4.57 requires >=0.34; keep this below 1 until all callers
   # have been evaluated against the Hub 1.x API.
@@ -37,8 +37,8 @@ dependencies = [
   # torchaudio must match torch (ABI-coupled); keep in lockstep with the pins above.
   "torchaudio==2.9.1+cu128; sys_platform == 'win32'",
   "torchaudio==2.9.1; sys_platform != 'win32'",
-  "typer==0.16.0",
-  "platformdirs==4.5.1",
+  "typer==0.27.2",
+  "platformdirs==4.11.9",
   "jiwer==4.0.0",
 ]
 
@@ -48,10 +48,10 @@ dependencies = [
 # headless CLI (`aTrain_core transcribe …`, `aTrain init`) works on the
 # base install.
 gui = [
-  "nicegui==3.15.0",
-  "pywebview==6.1",
+  "nicegui==3.17.0",
+  "pywebview==6.2.1",
   "pywebview[GTK]; sys_platform == 'linux'",
-  "show-in-file-manager==1.1.4",
+  "show-in-file-manager==1.1.6",
   "wakepy==1.0.0",
   "dask; sys_platform == 'linux'",
 ]
