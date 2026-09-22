@@ -134,7 +134,9 @@ jobs:
           FLATPAK_ARCH: ${{ matrix.arch }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak
+          # dbus provides dbus-run-session: the sandboxed builder reaches the
+          # host flatpak through the session helper, and runners have no session bus.
+          sudo apt-get install -y flatpak dbus
           # Ubuntu 24.04 restricts unprivileged namespaces by default. Allow
           # bubblewrap on this ephemeral runner for the offline build sandbox.
           if [[ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
@@ -164,7 +166,7 @@ jobs:
         env:
           FLATPAK_ARCH: ${{ matrix.arch }}
         run: |
-          flatpak run org.flatpak.Builder --force-clean --disable-rofiles-fuse --verbose \
+          dbus-run-session -- flatpak run org.flatpak.Builder --force-clean --disable-rofiles-fuse --verbose \
             --user --install-deps-from=flathub --default-branch=stable \
             --mirror-screenshots-url=https://dl.flathub.org/media \
             --compose-url-policy=full \
@@ -172,9 +174,9 @@ jobs:
             flatpak_app .flatpak-work/io.github.juergenfleiss.aTrain.yml
       - name: Run Flathub build and repository linters
         run: |
-          flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
+          dbus-run-session -- flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
             --gha-format builddir "$PWD/flatpak_app"
-          flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
+          dbus-run-session -- flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
             --gha-format repo "$PWD/repo"
       - name: Bundle the release
         # PRs validate both native builds and their Flathub lints; tags and manual runs also provide
