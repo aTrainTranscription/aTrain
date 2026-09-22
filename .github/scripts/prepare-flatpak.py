@@ -20,6 +20,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 APP_ID = "io.github.juergenfleiss.aTrain"
+ARCHES = ["x86_64", "aarch64"]
 ALLOWED_SDISTS = {"julius", "proxy-tools"}
 LOCAL_SOURCE_SKIPS = [
     ".git",
@@ -71,10 +72,11 @@ def marker_environment(arch: str) -> dict[str, str]:
 def lock_packages(lock: Path, arch: str) -> dict[tuple[str, str], dict]:
     # pylock.toml contains the selected dependency set, markers, and artifacts.
     data = tomllib.loads(lock.read_text(encoding="utf-8"))
+    environment = marker_environment(arch)
     result: dict[tuple[str, str], dict] = {}
     for package in data.get("packages", []):
         marker = package.get("marker")
-        if marker and not Marker(marker).evaluate(marker_environment(arch)):
+        if marker and not Marker(marker).evaluate(environment):
             continue
         if "name" not in package or "version" not in package:
             raise ValueError("pylock package is missing name or version")
@@ -85,12 +87,11 @@ def lock_packages(lock: Path, arch: str) -> dict[tuple[str, str], dict]:
     return dict(sorted(result.items()))
 
 
-def valid_artifact(artifact: dict) -> None:
+def validate_artifact(url: object, sha256: object) -> None:
     # Every source passed to Flatpak must have an HTTPS URL and locked SHA-256.
-    url, digest = artifact.get("url"), artifact.get("hash")
     if not isinstance(url, str) or urlparse(url).scheme != "https":
         raise ValueError(f"unsupported artifact URL: {url!r}")
-    if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+    if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
         raise ValueError(f"invalid artifact hash for {url}")
 
 
@@ -104,12 +105,8 @@ def release_from_lock(package: dict) -> req2flatpak.Release:
     # Construct req2flatpak objects ourselves so it never needs to query PyPI.
     downloads = []
     for artifact in artifacts:
-        normalized = {
-            "url": artifact.get("url"),
-            "hash": f"sha256:{artifact.get('hashes', {}).get('sha256')}",
-        }
-        valid_artifact(normalized)
-        url = normalized["url"]
+        url, sha256 = artifact.get("url"), artifact.get("hashes", {}).get("sha256")
+        validate_artifact(url, sha256)
         filename = unquote(Path(urlparse(url).path).name)
         if not filename:
             raise ValueError(f"artifact URL has no filename: {url}")
@@ -118,7 +115,7 @@ def release_from_lock(package: dict) -> req2flatpak.Release:
             version=version,
             filename=filename,
             url=url,
-            sha256=normalized["hash"].removeprefix("sha256:"),
+            sha256=sha256,
         )
         if download.is_wheel:
             try:
@@ -159,20 +156,25 @@ def python_module(arch: str, packages: dict[tuple[str, str], dict]) -> dict:
     module = req2flatpak.FlatpakGenerator.build_module(
         selected_requirements,
         downloads,
-        module_name=f"python-dependencies-{'x86-64' if arch == 'x86_64' else 'aarch64'}",
+        module_name=f"python-dependencies-{arch.replace('_', '-')}",
         pip_install_template=(
             "pip install --no-index --find-links=file://${PWD} --prefix=${FLATPAK_DEST} "
             "--no-build-isolation --no-deps --ignore-installed "
         ),
     )
+    filenames = {download.url: download.filename for download in downloads}
+    for source in module["sources"]:
+        filename = filenames[source["url"]]
+        if Path(urlparse(source["url"]).path).name != filename:
+            # Flatpak otherwise preserves URL escapes such as PyTorch's %2Bcu128.
+            # pip ignores that staged filename because it is not a valid wheel name.
+            source["dest-filename"] = filename
     module["only-arches"] = [arch]
     return module
 
 
 def source_version(root: Path) -> str:
-    match = re.search(
-        r'__version__\s*=\s*"([^"]+)"', (root / "aTrain/version.py").read_text()
-    )
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', (root / "aTrain/version.py").read_text())
     if match is None:
         raise ValueError("aTrain/version.py has no __version__")
     return match.group(1)
@@ -215,9 +217,7 @@ def update_manifest(
     )
     if tag and not local_source:
         source["tag"] = tag
-    module["sources"] = [
-        source,
-    ]
+    module["sources"] = [source]
     output.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
 
 
@@ -250,8 +250,7 @@ def main(argv: list[str] | None = None) -> int:
         version = tag_version
         if project_version != version:
             parser.error(
-                "tag version must match aTrain/version.py "
-                f"({version!r} != {project_version!r})"
+                f"tag version must match aTrain/version.py ({version!r} != {project_version!r})"
             )
     metadata_version = metainfo_version(root)
     if metadata_version != version:
@@ -262,9 +261,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.local_source and not args.local_source.is_dir():
         parser.error("--local-source must be an existing directory")
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    packages = {arch: lock_packages(args.lock, arch) for arch in ("x86_64", "aarch64")}
     # Generate independent dependency modules because markers and wheels differ by CPU.
-    modules = [python_module(arch, packages[arch]) for arch in ("x86_64", "aarch64")]
+    modules = [python_module(arch, lock_packages(args.lock, arch)) for arch in ARCHES]
     (args.output_dir / "atrain_python_dependencies.json").write_text(
         json.dumps(
             {
@@ -287,8 +285,11 @@ def main(argv: list[str] | None = None) -> int:
         args.local_source,
     )
     (args.output_dir / "flathub.json").write_text(
-        json.dumps({"only-arches": ["x86_64", "aarch64"]}, indent=2) + "\n", encoding="utf-8"
+        json.dumps({"only-arches": ARCHES}, indent=2) + "\n", encoding="utf-8"
     )
+    # key=value lines, suitable for appending to $GITHUB_OUTPUT.
+    print(f"version={version}")
+    print(f"stable={str(not Version(version).is_prerelease).lower()}")
     return 0
 
 

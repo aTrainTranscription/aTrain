@@ -32,13 +32,17 @@ On a `v*` tag, a manual dispatch, or a relevant pull request, the workflow:
    x86 NVIDIA and Triton dependencies; x86 retains its CUDA libraries. Models
    stay bundled with the current Flathub archive hashes and revision-pinned
    `.gitattributes` files.
-5. For release tags and manual runs, uploads architecture-specific `.flatpak`
+5. Pull requests that change only application code (`aTrain/`, `aTrain_core/`)
+   stop after steps 1-3. The native builds run for tags, manual runs, and PRs
+   touching packaging inputs: this workflow and its script, `packaging/flatpak/`,
+   `flatpak/`, `share/`, `pyproject.toml`, or `uv.lock`.
+6. For release tags and manual runs, uploads architecture-specific `.flatpak`
    bundles and checksums. Pull requests skip costly bundle compression after
    validating both native builds and their Flathub lints. All runs upload a
    separate `aTrain-flathub-sources` artifact containing the reviewable manifest
    files. Bundles are workflow artifacts; Flathub builds the source manifest
    itself rather than accepting these bundles for publication.
-6. For stable release tags, optionally creates or updates a Flathub PR after
+7. For stable release tags, optionally creates or updates a Flathub PR after
    **both** architectures pass. Flathub's test build and maintainer merge remain
    the final publication steps.
 
@@ -137,14 +141,17 @@ uv run --no-project --with req2flatpak==0.3.1 --with packaging==21.3 --with pyya
     --lock pylock.flatpak.toml \
     --commit "$(git rev-parse HEAD)" \
     --output-dir .flatpak-work --local-source "$PWD"
-flatpak-builder --force-clean --disable-rofiles-fuse --repo=repo \
+flatpak run org.flatpak.Builder --force-clean --disable-rofiles-fuse --user \
+  --install-deps-from=flathub --mirror-screenshots-url=https://dl.flathub.org/media --repo=repo \
   flatpak_app .flatpak-work/io.github.juergenfleiss.aTrain.yml
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder builddir flatpak_app
 flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
 flatpak build-bundle repo aTrain-local.flatpak io.github.juergenfleiss.aTrain
 ```
 
-Install the GNOME 50 SDK/runtime and `flatpak-builder` first. A native ARM build
+Install `org.flatpak.Builder` from Flathub first; it provides a current
+flatpak-builder and the linter, and installs the GNOME 50 SDK/runtime on demand.
+Run from a directory under your home: the builder sandbox cannot see `/tmp`. A native ARM build
 needs an ARM machine; setting `--arch=aarch64` on an x86 machine does not provide
 emulation. Omit `--local-source` to generate the source-pinned Flathub copy, and
 add `--tag vVERSION` when preparing a tagged release. The committed AppStream

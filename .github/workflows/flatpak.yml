@@ -14,7 +14,6 @@ on:
       - "aTrain_core/**"
       - "pyproject.toml"
       - "uv.lock"
-      - "tests/unit/test_prepare_flatpak.py"
   workflow_dispatch:
     inputs:
       submit:
@@ -24,6 +23,13 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # Isolated tool environment for prepare-flatpak.py. req2flatpak 0.3.1
+  # requires packaging<22.
+  PREPARE_FLATPAK: >-
+    uv run --no-project --with req2flatpak==0.3.1 --with packaging==21.3
+    --with pyyaml==6.0.3 python .github/scripts/prepare-flatpak.py
 
 concurrency:
   group: flatpak-${{ github.ref }}
@@ -37,42 +43,46 @@ jobs:
       version: ${{ steps.prepare.outputs.version }}
       commit: ${{ steps.prepare.outputs.commit }}
       stable: ${{ steps.prepare.outputs.stable }}
+      native-build: ${{ steps.scope.outputs.native-build }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # PRs check out a merge commit; its first parent is the base branch.
+          fetch-depth: 2
+      - name: Decide whether native builds are needed
+        # App-only PRs get the cheap generation and lint checks. The two
+        # multi-hour native builds run for tags, manual runs, and PRs that
+        # touch packaging inputs or dependencies.
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          native=true
+          if [[ "$EVENT" == pull_request ]] && ! git diff --name-only HEAD^1 HEAD | grep -qE \
+              '^(\.github/workflows/flatpak\.yml|\.github/scripts/prepare-flatpak\.py|packaging/flatpak/|flatpak/|share/|pyproject\.toml$|uv\.lock$)'; then
+            native=false
+            echo "::notice::No packaging inputs changed; skipping native Flatpak builds."
+          fi
+          echo "native-build=$native" >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@v10.1.0
       - name: Export and generate manifests
         id: prepare
         env:
           RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
+          mkdir -p flatpak-release
+          # The lock travels with the artifact so build jobs regenerate the
+          # local-source manifest from identical inputs.
           uv export --locked --extra gui --no-dev --no-emit-project \
             --no-emit-package pycairo --no-emit-package pygobject \
             --no-emit-package pygobject-stubs \
-            --format pylock.toml --output-file pylock.flatpak.toml > /dev/null
+            --format pylock.toml --output-file flatpak-release/pylock.flatpak.toml > /dev/null
           commit="$(git rev-parse HEAD)"
-          tag_args=()
-          if [[ -n "$RELEASE_TAG" ]]; then
-            tag_args=(--tag "$RELEASE_TAG")
-          fi
-          uv run --no-project --with req2flatpak==0.3.1 --with packaging==21.3 --with pyyaml==6.0.3 \
-            python .github/scripts/prepare-flatpak.py \
-              --lock pylock.flatpak.toml --commit "$commit" \
-              --output-dir flatpak-release "${tag_args[@]}"
-          version="${RELEASE_TAG#v}"
-          if [[ -z "$RELEASE_TAG" ]]; then
-            version="$(python3 -c 'import runpy; print(runpy.run_path("aTrain/version.py")["__version__"])')"
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
-          FLATPAK_VERSION="$version" uv run --no-project --with packaging==26.2 python - <<'PY'
-          import os
-          from packaging.version import Version
-          version = Version(os.environ['FLATPAK_VERSION'])
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'stable={str(not version.is_prerelease and not version.is_devrelease).lower()}\n')
-          PY
+          # Prints version= and stable= after validating tag and metadata.
+          $PREPARE_FLATPAK --lock flatpak-release/pylock.flatpak.toml --commit "$commit" \
+            --output-dir flatpak-release ${RELEASE_TAG:+--tag "$RELEASE_TAG"} >> "$GITHUB_OUTPUT"
       - name: Run Flathub manifest and AppStream linters
         env:
           FLATHUB_LINTER_IMAGE: ghcr.io/flathub/flatpak-builder-lint:latest
@@ -94,6 +104,7 @@ jobs:
   build:
     name: Native Flatpak (${{ matrix.arch }})
     needs: prepare
+    if: needs.prepare.outputs.native-build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -116,19 +127,21 @@ jobs:
             sudo docker system prune --all --force
           fi
           df -h .
-      - name: Install the native Flatpak toolchain and GNOME SDK
+      - name: Install Flatpak, the GNOME SDK, and Flathub's builder
+        # org.flatpak.Builder bundles a current flatpak-builder and the Flathub
+        # linter; Ubuntu 24.04's apt flatpak-builder (1.4.2) is too old.
         env:
           FLATPAK_ARCH: ${{ matrix.arch }}
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak
           # Ubuntu 24.04 restricts unprivileged namespaces by default. Allow
           # bubblewrap on this ephemeral runner for the offline build sandbox.
           if [[ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
-          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install --noninteractive --no-related -y --arch="$FLATPAK_ARCH" \
+          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install --noninteractive --no-related -y --arch="$FLATPAK_ARCH" \
             flathub org.gnome.Platform//50 org.gnome.Sdk//50 org.flatpak.Builder
       - uses: actions/checkout@v7
         with:
@@ -142,25 +155,19 @@ jobs:
       - name: Build the checked-out commit, including fork PRs
         # Release artifacts retain the public git source. This build-only copy
         # uses the identical local commit so unpushed/fork commits work too.
+        env:
+          COMMIT: ${{ needs.prepare.outputs.commit }}
         run: |
-          uv run --no-project --with pyyaml==6.0.3 python - <<'PY'
-          import os
-          from pathlib import Path
-          import yaml
-          path = Path('.flatpak-work/io.github.juergenfleiss.aTrain.yml')
-          manifest = yaml.safe_load(path.read_text())
-          module = next(m for m in manifest['modules'] if isinstance(m, dict) and m['name'] == 'atrain')
-          module['sources'][0] = {'type': 'dir', 'path': os.environ['GITHUB_WORKSPACE'],
-                                  'skip': ['.git', '.venv', '.flatpak-work', '.flatpak-builder',
-                                           'flatpak_app', 'repo', 'data', 'dist', 'build']}
-          path.write_text(yaml.safe_dump(manifest, sort_keys=False))
-          PY
+          $PREPARE_FLATPAK --lock .flatpak-work/pylock.flatpak.toml --commit "$COMMIT" \
+            --output-dir .flatpak-work --local-source "$PWD" > /dev/null
       - name: Build native Flatpak
         env:
           FLATPAK_ARCH: ${{ matrix.arch }}
         run: |
-          flatpak-builder --force-clean --disable-rofiles-fuse --verbose \
-            --install-deps-from=flathub --default-branch=stable \
+          flatpak run org.flatpak.Builder --force-clean --disable-rofiles-fuse --verbose \
+            --user --install-deps-from=flathub --default-branch=stable \
+            --mirror-screenshots-url=https://dl.flathub.org/media \
+            --compose-url-policy=full \
             --arch="$FLATPAK_ARCH" --repo=repo \
             flatpak_app .flatpak-work/io.github.juergenfleiss.aTrain.yml
       - name: Run Flathub build and repository linters
