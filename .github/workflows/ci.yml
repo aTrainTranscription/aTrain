@@ -286,7 +286,7 @@ jobs:
         run: |
           uv venv
           uv pip install --no-deps .
-          uv pip install platformdirs pyyaml show-in-file-manager huggingface_hub pytest
+          uv pip install platformdirs pyyaml packaging req2flatpak==0.3.1 show-in-file-manager huggingface_hub pytest
 
       - name: Run unit tests
         # `uv run --no-sync` finds the venv we just built and invokes python
