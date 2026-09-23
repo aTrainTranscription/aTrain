@@ -181,10 +181,14 @@ def main(argv: list[str] | None = None) -> None:
             "commit": commit,
         },
     )
-    write_manifest(
-        out / "local.yml",
-        {"type": "dir", "path": os.path.relpath(ROOT, out.resolve()), "skip": ignored_paths()},
-    )
+    try:
+        # Relative, so the manifest works wherever the artifact is unpacked.
+        checkout = os.path.relpath(ROOT, out.resolve())
+    except ValueError:
+        # Windows cannot relate paths on different drives (e.g. the unit tests'
+        # temp dir); Flatpak only builds on Linux, so the absolute path suffices.
+        checkout = ROOT.as_posix()
+    write_manifest(out / "local.yml", {"type": "dir", "path": checkout, "skip": ignored_paths()})
     print(f"version={version}")
     print(f"stable={str(stable).lower()}")
 

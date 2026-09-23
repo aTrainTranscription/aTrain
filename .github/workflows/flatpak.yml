@@ -113,7 +113,9 @@ jobs:
           mirror-screenshots-url: https://dl.flathub.org/media
       - name: Smoke-test the installed dependencies
         run: |
-          flatpak-builder --run flatpak_app "$MANIFEST" python3 -c \
+          # flatpak build, unlike flatpak-builder --run, needs no rofiles-fuse,
+          # which the container cannot start.
+          flatpak build flatpak_app python3 -c \
             'import aTrain.app, faster_whisper, nicegui, pyannote.audio, torch, webview'
           df -h .
       - name: Lint repository
