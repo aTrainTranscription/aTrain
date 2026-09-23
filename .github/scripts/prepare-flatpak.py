@@ -1,301 +1,193 @@
 #!/usr/bin/env python3
-"""Create the architecture-specific, offline Python sources for Flatpak."""
+"""Generate the Flathub manifest and offline Python sources from uv.lock.
+
+Writes to the output directory:
+  io.github.juergenfleiss.aTrain.yml  Flathub manifest, pinned to the git commit
+  local.yml                           the same manifest, built from this checkout
+  atrain_python_dependencies.json     per-architecture wheels for pip
+
+and prints version=/stable= lines for $GITHUB_OUTPUT.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
-import sys
+import subprocess
 import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import unquote, urlparse
 
-import req2flatpak
-import yaml
-from packaging.markers import Marker, default_environment
+from packaging.pylock import PackageWheel, Pylock
 from packaging.tags import compatible_tags, cpython_tags
-from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
+from ruamel.yaml import YAML
 
+ROOT = Path(__file__).resolve().parents[2]
 APP_ID = "io.github.juergenfleiss.aTrain"
-ARCHES = ["x86_64", "aarch64"]
-ALLOWED_SDISTS = {"julius", "proxy-tools"}
-LOCAL_SOURCE_SKIPS = [
-    ".git",
-    ".venv",
-    ".flatpak-work",
-    ".flatpak-builder",
-    "flatpak_app",
-    "repo",
-    "data",
-    "dist",
-    "build",
-]
-COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
+TEMPLATE = ROOT / "packaging" / "flatpak" / f"{APP_ID}.yml"
+ARCHES = ("x86_64", "aarch64")
+# The GNOME 50 runtime ships CPython 3.13.15 and glibc 2.42.
+PYTHON = (3, 13)
+PYTHON_FULL = "3.13.15"
+GLIBC_MINOR = 42
+MANYLINUX_ALIASES = {17: "2014", 12: "2010", 5: "1"}
+# Reviewed pure-Python packages that publish no wheel.
+ALLOWED_SDISTS = {"proxy-tools"}
+EXPORT = [
+    "uv", "export", "--locked", "--extra", "gui", "--no-dev", "--no-emit-project",
+    "--format", "pylock.toml",
+    # The GNOME runtime provides the GObject bindings.
+    "--no-emit-package", "pycairo", "--no-emit-package", "pygobject",
+    "--no-emit-package", "pygobject-stubs",
+]  # fmt: skip
 
 
-def target_tags(arch: str):
-    # Tell req2flatpak which CPython 3.13 wheels can run on the GNOME 50 runtime.
-    platforms = [f"manylinux_2_{minor}_{arch}" for minor in range(42, 16, -1)]
-    platforms += [
-        f"manylinux2014_{arch}",
-        f"manylinux2010_{arch}",
-        f"manylinux1_{arch}",
-        f"linux_{arch}",
+def target(arch: str) -> tuple[dict[str, str], list]:
+    """Marker environment and wheel tags of the GNOME runtime on *arch*."""
+    environment = {
+        "implementation_name": "cpython",
+        "implementation_version": PYTHON_FULL,
+        "os_name": "posix",
+        "platform_machine": arch,
+        "platform_python_implementation": "CPython",
+        "platform_release": "",
+        "platform_system": "Linux",
+        "platform_version": "",
+        "python_full_version": PYTHON_FULL,
+        "python_version": "3.13",
+        "sys_platform": "linux",
+    }
+    platforms = []
+    for minor in range(GLIBC_MINOR, 4, -1):
+        platforms.append(f"manylinux_2_{minor}_{arch}")
+        if minor in MANYLINUX_ALIASES:
+            platforms.append(f"manylinux{MANYLINUX_ALIASES[minor]}_{arch}")
+    platforms.append(f"linux_{arch}")
+    tags = [
+        *cpython_tags(PYTHON, ["cp313"], platforms),
+        *compatible_tags(PYTHON, "cp313", platforms),
     ]
-    return list(cpython_tags((3, 13), abis=["cp313"], platforms=platforms)) + list(
-        compatible_tags((3, 13), interpreter="cp313", platforms=platforms)
-    )
+    return environment, tags
 
 
-def marker_environment(arch: str) -> dict[str, str]:
-    # Evaluate requirement markers as Linux/Python 3.13 on the target architecture.
-    environment = default_environment()
-    environment.update(
-        implementation_name="cpython",
-        implementation_version="3.13.0",
-        os_name="posix",
-        platform_machine=arch,
-        platform_python_implementation="CPython",
-        platform_release="",
-        platform_system="Linux",
-        platform_version="",
-        python_full_version="3.13.0",
-        python_version="3.13",
-        sys_platform="linux",
-    )
-    return environment
+def python_module(lock: Pylock, arch: str) -> dict:
+    environment, tags = target(arch)
+    names, sources = [], []
+    for package, dist in lock.select(environment=environment, tags=tags):
+        if not isinstance(dist, PackageWheel) and package.name not in ALLOWED_SDISTS:
+            raise ValueError(f"{package.name} has no CPython 3.13 wheel for {arch}")
+        source = {"type": "file", "url": dist.url, "sha256": dist.hashes["sha256"]}
+        # pip rejects escaped wheel names, e.g. PyTorch's torch-2.9.1%2Bcu128-....
+        if dist.filename != dist.url.rpartition("/")[2]:
+            source["dest-filename"] = dist.filename
+        names.append(package.name)
+        sources.append(source)
+    return {
+        "name": f"python3-dependencies-{arch}",
+        "only-arches": [arch],
+        "buildsystem": "simple",
+        "build-commands": [
+            'pip3 install --no-index --find-links="file://${PWD}" --prefix=${FLATPAK_DEST} '
+            "--no-build-isolation --no-deps --ignore-installed " + " ".join(names)
+        ],
+        "sources": sources,
+    }
 
 
-def lock_packages(lock: Path, arch: str) -> dict[tuple[str, str], dict]:
-    # pylock.toml contains the selected dependency set, markers, and artifacts.
-    data = tomllib.loads(lock.read_text(encoding="utf-8"))
-    environment = marker_environment(arch)
-    result: dict[tuple[str, str], dict] = {}
-    for package in data.get("packages", []):
-        marker = package.get("marker")
-        if marker and not Marker(marker).evaluate(environment):
-            continue
-        if "name" not in package or "version" not in package:
-            raise ValueError("pylock package is missing name or version")
-        key = (canonicalize_name(package["name"]), package["version"])
-        if key in result:
-            raise ValueError(f"ambiguous lock entries for {key[0]} {key[1]}")
-        result[key] = package
-    return dict(sorted(result.items()))
+def release_version(tag: str | None) -> tuple[str, bool]:
+    """Release version and whether it is stable, checked against the sources.
 
-
-def validate_artifact(url: object, sha256: object) -> None:
-    # Every source passed to Flatpak must have an HTTPS URL and locked SHA-256.
-    if not isinstance(url, str) or urlparse(url).scheme != "https":
-        raise ValueError(f"unsupported artifact URL: {url!r}")
-    if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
-        raise ValueError(f"invalid artifact hash for {url}")
-
-
-def release_from_lock(package: dict) -> req2flatpak.Release:
-    """Adapt uv's locked artifacts into req2flatpak's offline release model."""
-    name = canonicalize_name(package["name"])
-    version = package["version"]
-    artifacts = list(package.get("wheels", []))
-    if isinstance(package.get("sdist"), dict):
-        artifacts.append(package["sdist"])
-    # Construct req2flatpak objects ourselves so it never needs to query PyPI.
-    downloads = []
-    for artifact in artifacts:
-        url, sha256 = artifact.get("url"), artifact.get("hashes", {}).get("sha256")
-        validate_artifact(url, sha256)
-        filename = unquote(Path(urlparse(url).path).name)
-        if not filename:
-            raise ValueError(f"artifact URL has no filename: {url}")
-        download = req2flatpak.Download(
-            package=name,
-            version=version,
-            filename=filename,
-            url=url,
-            sha256=sha256,
-        )
-        if download.is_wheel:
-            try:
-                # Force parsing now so malformed locked wheel diagnostics are explicit.
-                _ = download.tags
-            except ValueError as error:
-                raise ValueError(f"invalid wheel filename: {url}") from error
-        downloads.append(download)
-    return req2flatpak.Release(name, version, sorted(downloads, key=lambda item: item.url))
-
-
-def choose_download(package: dict, platform: req2flatpak.Platform) -> req2flatpak.Download:
-    release = release_from_lock(package)
-    # Let req2flatpak select the best compatible wheel from uv's locked candidates.
-    wheel = req2flatpak.DownloadChooser.wheel(release, platform)
-    if wheel is not None:
-        return wheel
-    # Source builds are allowed only for the small, reviewed build-tool allowlist.
-    if release.package not in ALLOWED_SDISTS:
-        raise ValueError(f"no supported CPython 3.13 Linux wheel for {release.package}")
-    sdist = req2flatpak.DownloadChooser.sdist(release)
-    if sdist is None:
-        raise ValueError(f"approved source package has no sdist: {release.package}")
-    return sdist
-
-
-def python_module(arch: str, packages: dict[tuple[str, str], dict]) -> dict:
-    # Supply our GNOME 50 tags instead of req2flatpak's older built-in Linux target.
-    platform = req2flatpak.Platform(
-        python_version=["3", "13"], python_tags=[str(tag) for tag in target_tags(arch)]
-    )
-    selected_requirements = []
-    downloads = []
-    for (name, version), package in packages.items():
-        selected_requirements.append(req2flatpak.Requirement(package=name, version=version))
-        downloads.append(choose_download(package, platform))
-    # req2flatpak creates the module and source list; pip may use only those files.
-    module = req2flatpak.FlatpakGenerator.build_module(
-        selected_requirements,
-        downloads,
-        module_name=f"python-dependencies-{arch.replace('_', '-')}",
-        pip_install_template=(
-            "pip install --no-index --find-links=file://${PWD} --prefix=${FLATPAK_DEST} "
-            "--no-build-isolation --no-deps --ignore-installed "
-        ),
-    )
-    filenames = {download.url: download.filename for download in downloads}
-    for source in module["sources"]:
-        filename = filenames[source["url"]]
-        if Path(urlparse(source["url"]).path).name != filename:
-            # Flatpak otherwise preserves URL escapes such as PyTorch's %2Bcu128.
-            # pip ignores that staged filename because it is not a valid wheel name.
-            source["dest-filename"] = filename
-    module["only-arches"] = [arch]
-    return module
-
-
-def source_version(root: Path) -> str:
-    match = re.search(r'__version__\s*=\s*"([^"]+)"', (root / "aTrain/version.py").read_text())
+    The tag must name aTrain/version.py and the newest AppStream release, or be a
+    pre-release of it: RC tags (v1.5.0-rc1) test the upcoming release.
+    """
+    code = (ROOT / "aTrain" / "version.py").read_text(encoding="utf-8")
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', code)
     if match is None:
-        raise ValueError("aTrain/version.py has no __version__")
-    return match.group(1)
+        raise SystemExit("aTrain/version.py defines no __version__")
+    metainfo = ROOT / "share" / "metainfo" / f"{APP_ID}.metainfo.xml"
+    release = ET.parse(metainfo).find("releases/release")  # noqa: S314 - tracked file
+    if release is None or release.get("version") is None:
+        raise SystemExit(f"{metainfo.name} has no <release>")
+    if tag and not tag.startswith("v"):
+        raise SystemExit(f"tag {tag} must start with v, e.g. v{match[1]}")
+    try:
+        project, newest = Version(match[1]), Version(release.get("version"))
+        version = Version(tag.removeprefix("v")) if tag else project
+    except InvalidVersion as error:
+        raise SystemExit(error) from error
+    if newest != project:
+        raise SystemExit(f"newest AppStream release {newest} != aTrain/version.py {project}")
+    if version != project and not (
+        version.is_prerelease and version.base_version == project.base_version
+    ):
+        raise SystemExit(f"tag {tag} does not match aTrain/version.py {project}")
+    return str(version), not version.is_prerelease
 
 
-def metainfo_version(root: Path) -> str:
-    source = root / "share" / "metainfo" / f"{APP_ID}.metainfo.xml"
-    tree = ET.parse(source)  # noqa: S314 - this is a tracked project metadata file.
-    releases = tree.getroot().find("releases")
-    if releases is None:
-        raise ValueError("AppStream metadata has no releases")
-    release = next((item for item in releases if item.tag == "release"), None)
-    if release is None or not release.get("version"):
-        raise ValueError("AppStream metadata has no release version")
-    return release.get("version")
-
-
-def update_manifest(
-    template: Path, output: Path, commit: str, tag: str | None, local_source: Path | None
-) -> None:
-    manifest = yaml.safe_load(template.read_text(encoding="utf-8"))
-    module = next(
-        (
-            item
-            for item in manifest.get("modules", [])
-            if isinstance(item, dict) and item.get("name") == "atrain"
-        ),
-        None,
+def ignored_paths() -> list[str]:
+    """Git-ignored paths (venvs, build outputs, bundles) that local builds skip."""
+    output = subprocess.check_output(
+        ["git", "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"],  # noqa: S607
+        cwd=ROOT,
+        text=True,
     )
-    if module is None:
-        raise ValueError("template has no atrain module")
-    source = (
-        {"type": "dir", "path": str(local_source.resolve()), "skip": LOCAL_SOURCE_SKIPS}
-        if local_source
-        else {
+    return [".git", *(path.rstrip("/") for path in output.split("\0") if path)]
+
+
+def write_manifest(path: Path, source: dict) -> None:
+    yaml = YAML()
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    yaml.preserve_quotes = True
+    yaml.width = 4096
+    manifest = yaml.load(TEMPLATE)
+    [atrain] = [m for m in manifest["modules"] if isinstance(m, dict) and m["name"] == "atrain"]
+    atrain["sources"][0] = source
+    yaml.dump(manifest, path)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--tag", help="release tag, e.g. v1.5.0")
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "flatpak-release")
+    args = parser.parse_args(argv)
+
+    version, stable = release_version(args.tag)
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()  # noqa: S607
+    lock = Pylock.from_dict(tomllib.loads(subprocess.check_output(EXPORT, cwd=ROOT, text=True)))
+
+    out = args.output_dir
+    out.mkdir(parents=True, exist_ok=True)
+    dependencies = {
+        "name": "python3-dependencies",
+        "buildsystem": "simple",
+        "build-commands": [],
+        "modules": [python_module(lock, arch) for arch in ARCHES],
+    }
+    (out / "atrain_python_dependencies.json").write_text(
+        json.dumps(dependencies, indent=2) + "\n", encoding="utf-8"
+    )
+    tag = {"tag": args.tag} if args.tag else {}
+    write_manifest(
+        out / f"{APP_ID}.yml",
+        {
             "type": "git",
             "url": "https://github.com/aTrainTranscription/aTrain.git",
+            **tag,
             "commit": commit,
-        }
+        },
     )
-    if tag and not local_source:
-        source["tag"] = tag
-    module["sources"] = [source]
-    output.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--lock", type=Path, required=True, help="uv export --format pylock.toml output"
+    write_manifest(
+        out / "local.yml",
+        {"type": "dir", "path": os.path.relpath(ROOT, out.resolve()), "skip": ignored_paths()},
     )
-    parser.add_argument(
-        "--template",
-        type=Path,
-        default=Path("packaging/flatpak/io.github.juergenfleiss.aTrain.yml"),
-    )
-    parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--commit", required=True)
-    parser.add_argument("--tag")
-    parser.add_argument("--local-source", type=Path)
-    args = parser.parse_args(argv)
-    if not COMMIT_RE.fullmatch(args.commit):
-        parser.error("--commit must be 40 lowercase hexadecimal characters")
-    root = Path(__file__).resolve().parents[2]
-    project_version = source_version(root)
-    version = project_version
-    if args.tag:
-        tag_version = args.tag[1:] if args.tag.startswith("v") else ""
-        try:
-            Version(tag_version)
-        except InvalidVersion:
-            parser.error("--tag must be vVERSION")
-        version = tag_version
-        if project_version != version:
-            parser.error(
-                f"tag version must match aTrain/version.py ({version!r} != {project_version!r})"
-            )
-    metadata_version = metainfo_version(root)
-    if metadata_version != version:
-        parser.error(
-            "newest AppStream release must match the release version "
-            f"({metadata_version!r} != {version!r})"
-        )
-    if args.local_source and not args.local_source.is_dir():
-        parser.error("--local-source must be an existing directory")
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    # Generate independent dependency modules because markers and wheels differ by CPU.
-    modules = [python_module(arch, lock_packages(args.lock, arch)) for arch in ARCHES]
-    (args.output_dir / "atrain_python_dependencies.json").write_text(
-        json.dumps(
-            {
-                "name": "python-dependencies",
-                "buildsystem": "simple",
-                "build-commands": ["true"],
-                "modules": modules,
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    # The pinned source contains the versioned AppStream metadata.
-    update_manifest(
-        args.template,
-        args.output_dir / args.template.name,
-        args.commit,
-        args.tag,
-        args.local_source,
-    )
-    (args.output_dir / "flathub.json").write_text(
-        json.dumps({"only-arches": ARCHES}, indent=2) + "\n", encoding="utf-8"
-    )
-    # key=value lines, suitable for appending to $GITHUB_OUTPUT.
     print(f"version={version}")
-    print(f"stable={str(not Version(version).is_prerelease).lower()}")
-    return 0
+    print(f"stable={str(stable).lower()}")
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except ValueError as error:
-        print(f"error: {error}", file=sys.stderr)
-        raise SystemExit(2) from error
+    main()

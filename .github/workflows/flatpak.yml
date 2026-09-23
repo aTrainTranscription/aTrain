@@ -8,103 +8,56 @@ on:
       - ".github/workflows/flatpak.yml"
       - ".github/scripts/prepare-flatpak.py"
       - "packaging/flatpak/**"
+      - "!packaging/flatpak/README.md"
       - "flatpak/**"
       - "share/**"
-      - "aTrain/**"
-      - "aTrain_core/**"
+      - "aTrain/version.py"
       - "pyproject.toml"
       - "uv.lock"
   workflow_dispatch:
-    inputs:
-      submit:
-        description: "Create/update the Flathub PR after both native builds pass (stable v-tag refs only)"
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
-env:
-  # Isolated tool environment for prepare-flatpak.py. req2flatpak 0.3.1
-  # requires packaging<22.
-  PREPARE_FLATPAK: >-
-    uv run --no-project --with req2flatpak==0.3.1 --with packaging==21.3
-    --with pyyaml==6.0.3 python .github/scripts/prepare-flatpak.py
-
 concurrency:
   group: flatpak-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   prepare:
-    name: Prepare pinned Flathub sources
+    name: Generate manifests
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.prepare.outputs.version }}
-      commit: ${{ steps.prepare.outputs.commit }}
       stable: ${{ steps.prepare.outputs.stable }}
-      native-build: ${{ steps.scope.outputs.native-build }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # PRs check out a merge commit; its first parent is the base branch.
-          fetch-depth: 2
-      - name: Decide whether native builds are needed
-        # App-only PRs get the cheap generation and lint checks. The two
-        # multi-hour native builds run for tags, manual runs, and PRs that
-        # touch packaging inputs or dependencies.
-        id: scope
-        env:
-          EVENT: ${{ github.event_name }}
-        run: |
-          native=true
-          if [[ "$EVENT" == pull_request ]] && ! git diff --name-only HEAD^1 HEAD | grep -qE \
-              '^(\.github/workflows/flatpak\.yml|\.github/scripts/prepare-flatpak\.py|packaging/flatpak/|flatpak/|share/|pyproject\.toml$|uv\.lock$)'; then
-            native=false
-            echo "::notice::No packaging inputs changed; skipping native Flatpak builds."
-          fi
-          echo "native-build=$native" >> "$GITHUB_OUTPUT"
       - uses: astral-sh/setup-uv@v10.1.0
-      - name: Export and generate manifests
-        id: prepare
+      - id: prepare
         env:
-          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
         run: |
-          mkdir -p flatpak-release
-          # The lock travels with the artifact so build jobs regenerate the
-          # local-source manifest from identical inputs.
-          uv export --locked --extra gui --no-dev --no-emit-project \
-            --no-emit-package pycairo --no-emit-package pygobject \
-            --no-emit-package pygobject-stubs \
-            --format pylock.toml --output-file flatpak-release/pylock.flatpak.toml > /dev/null
-          commit="$(git rev-parse HEAD)"
-          echo "commit=$commit" >> "$GITHUB_OUTPUT"
-          # Prints version= and stable= after validating tag and metadata.
-          $PREPARE_FLATPAK --lock flatpak-release/pylock.flatpak.toml --commit "$commit" \
-            --output-dir flatpak-release ${RELEASE_TAG:+--tag "$RELEASE_TAG"} >> "$GITHUB_OUTPUT"
-      - name: Run Flathub manifest and AppStream linters
-        env:
-          FLATHUB_LINTER_IMAGE: ghcr.io/flathub/flatpak-builder-lint:latest
-        run: |
-          docker run --rm --cap-drop=ALL --security-opt=no-new-privileges \
-            --mount type=bind,source="$PWD/flatpak-release",target=/mnt,readonly \
-            "$FLATHUB_LINTER_IMAGE" --gha-format manifest \
-            /mnt/io.github.juergenfleiss.aTrain.yml
-          docker run --rm --cap-drop=ALL --security-opt=no-new-privileges \
-            --mount type=bind,source="$PWD/share/metainfo",target=/mnt,readonly \
-            "$FLATHUB_LINTER_IMAGE" --gha-format appstream \
-            /mnt/io.github.juergenfleiss.aTrain.metainfo.xml
+          uv run --isolated --locked --only-group flatpak \
+            python .github/scripts/prepare-flatpak.py ${TAG:+--tag "$TAG"} >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v7
+        id: upload
         with:
-          name: aTrain-flathub-sources
+          name: flatpak-manifests
           path: flatpak-release/
           if-no-files-found: error
+          overwrite: true
+      - name: Link manifests in the job summary
+        env:
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          echo "Flathub manifests: [flatpak-manifests]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
   build:
-    name: Native Flatpak (${{ matrix.arch }})
+    name: Build (${{ matrix.arch }})
     needs: prepare
-    if: needs.prepare.outputs.native-build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -114,158 +67,103 @@ jobs:
           - arch: aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    # Large CUDA wheels and Flatpak's fixed XZ bundle compression need time.
+    # CUDA wheels and bundle compression take time.
     timeout-minutes: 180
+    env:
+      # Tags build the exact manifest submitted to Flathub; other runs build the
+      # checkout, which also works for fork PRs.
+      MANIFEST: flatpak-release/${{ github.ref_type == 'tag' && 'io.github.juergenfleiss.aTrain.yml' || 'local.yml' }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      # Unused host toolchains are mounted only to delete them: the CUDA
+      # wheels, bundled models, build, repository and bundle need about 40 GB.
+      options: >-
+        --privileged
+        -v /usr/share/dotnet:/unused/dotnet
+        -v /usr/local/lib/android:/unused/android
+        -v /usr/local/.ghcup:/unused/ghcup
+        -v /opt/hostedtoolcache:/unused/toolcache
+        -v /usr/local/share/powershell:/unused/powershell
+        -v /usr/share/swift:/unused/swift
+        -v /usr/lib/jvm:/unused/jvm
+        -v /opt/az:/unused/az
     steps:
-      - name: Make room for ML dependencies and bundled models
-        # These are disposable hosted runners. Avoid a large SDK container
-        # layer as well as keeping unused Android/.NET/Haskell toolchains.
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-            /opt/hostedtoolcache /usr/local/share/boost /usr/local/share/powershell
-          if command -v docker > /dev/null && sudo docker info > /dev/null 2>&1; then
-            sudo docker system prune --all --force
-          fi
-          df -h .
-      - name: Install Flatpak, the GNOME SDK, and Flathub's builder
-        # org.flatpak.Builder bundles a current flatpak-builder and the Flathub
-        # linter; Ubuntu 24.04's apt flatpak-builder (1.4.2) is too old.
-        env:
-          FLATPAK_ARCH: ${{ matrix.arch }}
-        run: |
-          sudo apt-get update
-          # dbus provides dbus-run-session: the sandboxed builder reaches the
-          # host flatpak through the session helper, and runners have no session bus.
-          sudo apt-get install -y flatpak dbus
-          # Ubuntu 24.04 restricts unprivileged namespaces by default. Allow
-          # bubblewrap on this ephemeral runner for the offline build sandbox.
-          if [[ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install --noninteractive --no-related -y --arch="$FLATPAK_ARCH" \
-            flathub org.gnome.Platform//50 org.gnome.Sdk//50 org.flatpak.Builder
+      - name: Free disk space
+        run: rm -rf /unused/*/* && df -h .
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.commit }}
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: aTrain-flathub-sources
-          path: .flatpak-work
-      - uses: astral-sh/setup-uv@v10.1.0
-      - name: Build the checked-out commit, including fork PRs
-        # Release artifacts retain the public git source. This build-only copy
-        # uses the identical local commit so unpushed/fork commits work too.
-        env:
-          COMMIT: ${{ needs.prepare.outputs.commit }}
+          name: flatpak-manifests
+          path: flatpak-release
+      - name: Lint Flathub manifest
+        run: flatpak-builder-lint --exceptions --gha-format manifest flatpak-release/io.github.juergenfleiss.aTrain.yml
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: ${{ env.MANIFEST }}
+          arch: ${{ matrix.arch }}
+          branch: stable
+          # Flathub builds its own bundles; ours are for testing tagged releases.
+          build-bundle: ${{ github.event_name != 'pull_request' }}
+          bundle: aTrain.flatpak
+          upload-artifact: false
+          # The downloads exceed the GitHub cache quota.
+          cache: false
+          mirror-screenshots-url: https://dl.flathub.org/media
+      - name: Smoke-test the installed dependencies
         run: |
-          $PREPARE_FLATPAK --lock .flatpak-work/pylock.flatpak.toml --commit "$COMMIT" \
-            --output-dir .flatpak-work --local-source "$PWD" > /dev/null
-      - name: Build native Flatpak
-        env:
-          FLATPAK_ARCH: ${{ matrix.arch }}
-        run: |
-          dbus-run-session -- flatpak run org.flatpak.Builder --force-clean --disable-rofiles-fuse --verbose \
-            --user --install-deps-from=flathub --default-branch=stable \
-            --mirror-screenshots-url=https://dl.flathub.org/media \
-            --compose-url-policy=full \
-            --arch="$FLATPAK_ARCH" --repo=repo \
-            flatpak_app .flatpak-work/io.github.juergenfleiss.aTrain.yml
-      - name: Run Flathub build and repository linters
-        run: |
-          dbus-run-session -- flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
-            --gha-format builddir "$PWD/flatpak_app"
-          dbus-run-session -- flatpak run --command=flatpak-builder-lint org.flatpak.Builder \
-            --gha-format repo "$PWD/repo"
-      - name: Bundle the release
-        # PRs validate both native builds and their Flathub lints; tags and manual runs also provide
-        # installable bundles. CUDA bundle compression is particularly slow.
-        if: github.event_name != 'pull_request'
-        env:
-          FLATPAK_ARCH: ${{ matrix.arch }}
-          FLATPAK_VERSION: ${{ needs.prepare.outputs.version }}
-        run: |
-          flatpak build-bundle repo "aTrain-$FLATPAK_VERSION-$FLATPAK_ARCH.flatpak" \
-            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
-            --arch="$FLATPAK_ARCH" io.github.juergenfleiss.aTrain stable
-      - name: Checksum bundle
-        if: github.event_name != 'pull_request'
-        run: sha256sum aTrain-*.flatpak > checksums-flatpak-${{ matrix.arch }}.txt
+          flatpak-builder --run flatpak_app "$MANIFEST" python3 -c \
+            'import aTrain.app, faster_whisper, nicegui, pyannote.audio, torch, webview'
+          df -h .
+      - name: Lint repository
+        # The same check Flathub runs on its builds.
+        run: flatpak-builder-lint --exceptions --gha-format repo repo
       - uses: actions/upload-artifact@v7
+        id: upload
         if: github.event_name != 'pull_request'
         with:
-          name: aTrain-flatpak-${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
-          path: |
-            aTrain-*.flatpak
-            checksums-flatpak-${{ matrix.arch }}.txt
+          name: aTrain-${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          path: aTrain.flatpak
           if-no-files-found: error
+          # The bundle is already compressed.
           compression-level: 0
           retention-days: 14
+      - name: Link bundle in the job summary
+        if: github.event_name != 'pull_request'
+        env:
+          NAME: aTrain-${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          echo "Flatpak bundle: [$NAME]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
   submit:
-    name: Prepare Flathub update PR
+    name: Open Flathub PR
     needs: [prepare, build]
-    # Never expose the cross-repository token to branch/fork PR builds or
-    # publish a prerelease to Flathub stable. Manual builds default to artifacts.
+    # Stable release tags only; FLATHUB_FORK opts in (see packaging/flatpak/README.md).
     if: >-
-      github.repository == 'aTrainTranscription/aTrain' &&
-      startsWith(github.ref, 'refs/tags/v') && needs.prepare.outputs.stable == 'true' &&
-      (github.event_name == 'push' || inputs.submit)
+      github.ref_type == 'tag' && needs.prepare.outputs.stable == 'true' &&
+      vars.FLATHUB_FORK != ''
     runs-on: ubuntu-24.04
-    env:
-      FLATHUB_TOKEN: ${{ secrets.FLATHUB_TOKEN }}
-      FLATHUB_FORK: ${{ vars.FLATHUB_FORK }}
+    timeout-minutes: 10
     steps:
-      - name: Check submission configuration
-        id: config
-        run: |
-          if [[ -z "$FLATHUB_TOKEN" || -z "$FLATHUB_FORK" ]]; then
-            echo "::notice::Configure FLATHUB_TOKEN and FLATHUB_FORK to enable Flathub PR submission. Built bundles and pinned manifest files are available as artifacts."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@v7
-        if: steps.config.outputs.ready == 'true'
         with:
           repository: flathub/io.github.juergenfleiss.aTrain
-          ref: master
           path: flathub
-          token: ${{ secrets.FLATHUB_TOKEN }}
+          persist-credentials: false
       - uses: actions/download-artifact@v8
-        if: steps.config.outputs.ready == 'true'
         with:
-          name: aTrain-flathub-sources
+          name: flatpak-manifests
           path: flatpak-release
-      - name: Copy only the generated packaging files
-        if: steps.config.outputs.ready == 'true'
-        run: |
-          cp flatpak-release/io.github.juergenfleiss.aTrain.yml flathub/
-          cp flatpak-release/atrain_python_dependencies.json flathub/
-          cp flatpak-release/flathub.json flathub/
-          git -C flathub rm -f --ignore-unmatch io.github.juergenfleiss.aTrain.metainfo.xml
-      - name: Create or update the release PR
-        if: steps.config.outputs.ready == 'true'
-        uses: peter-evans/create-pull-request@v8
+      - run: cp flatpak-release/{io.github.juergenfleiss.aTrain.yml,atrain_python_dependencies.json} flathub/
+      - uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.FLATHUB_TOKEN }}
           path: flathub
           push-to-fork: ${{ vars.FLATHUB_FORK }}
-          base: master
-          branch: atrain/v${{ needs.prepare.outputs.version }}
-          commit-message: Update aTrain to ${{ needs.prepare.outputs.version }}
-          title: Update aTrain to ${{ needs.prepare.outputs.version }}
-          add-paths: |
-            io.github.juergenfleiss.aTrain.yml
-            atrain_python_dependencies.json
-            io.github.juergenfleiss.aTrain.metainfo.xml
-            flathub.json
+          branch: update-${{ needs.prepare.outputs.version }}
+          commit-message: Update to ${{ needs.prepare.outputs.version }}
+          title: Update to ${{ needs.prepare.outputs.version }}
           body: |
-            Packages the unified aTrain and aTrain_core distribution from aTrainTranscription/aTrain@${{ needs.prepare.outputs.commit }}.
-
-            Native x86_64 and aarch64 builds and all Flathub linters passed. Python artifacts, including both architecture variants of TorchCodec 0.10.0, are SHA-256-pinned from the exported pylock.toml and generated by req2flatpak. Required models remain bundled.
-
-            Build results: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            Install and test the Flathub test build before merging. Flathub publishes after the maintainer merges this PR and its official build succeeds.
+            Generated from ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}; native x86_64 and aarch64 builds and the Flathub linters passed in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.

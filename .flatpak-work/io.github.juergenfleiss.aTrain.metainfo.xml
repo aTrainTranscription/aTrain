@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version='1.0' encoding='utf-8'?>
 <component type="desktop-application">
   <id>io.github.juergenfleiss.aTrain</id>
   <metadata_license>MIT</metadata_license>
@@ -17,47 +17,34 @@
       <li>Automatic speech-to-text transcription</li>
       <li>Speaker diarization</li>
       <li>GPU acceleration with CUDA support</li>
-      <li
-            >Export transcriptions in various formats, including MAXQDA, ATLAS.ti and NVivo compatible output</li>
+      <li>Export transcriptions in various formats, including MAXQDA, ATLAS.ti and nVivo compatible output, </li>
       <li>Completely offline - all processing done locally</li>
     </ul>
   </description>
-  <launchable
-        type="desktop-id"
-    >io.github.juergenfleiss.aTrain.desktop</launchable>
-  <url type="homepage">https://github.com/aTrainTranscription/aTrain</url>
-  <url type="bugtracker">https://github.com/aTrainTranscription/aTrain/issues</url>
-  <url type="vcs-browser">https://github.com/aTrainTranscription/aTrain</url>
+  <launchable type="desktop-id">io.github.juergenfleiss.aTrain.desktop</launchable>
+  <url type="homepage">https://github.com/JuergenFleiss/aTrain</url>
+  <url type="bugtracker">https://github.com/JuergenFleiss/aTrain/issues</url>
+  <url type="vcs-browser">https://github.com/JuergenFleiss/aTrain</url>
   <screenshots>
     <screenshot type="default">
       <caption>Main Interface.</caption>
-      <image
-                type="source"
-            >https://raw.githubusercontent.com/aTrainTranscription/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_1.png</image>
+      <image type="source">https://raw.githubusercontent.com/JuergenFleiss/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_1.png</image>
     </screenshot>
     <screenshot>
       <caption>Advanced Settings Screen.</caption>
-      <image
-                type="source"
-            >https://raw.githubusercontent.com/aTrainTranscription/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_2.png</image>
+      <image type="source">https://raw.githubusercontent.com/JuergenFleiss/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_2.png</image>
     </screenshot>
     <screenshot>
       <caption>Model Manager Screen.</caption>
-      <image
-                type="source"
-            >https://raw.githubusercontent.com/aTrainTranscription/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_3.png</image>
+      <image type="source">https://raw.githubusercontent.com/JuergenFleiss/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_3.png</image>
     </screenshot>
     <screenshot>
       <caption>Transcription Archive Screen.</caption>
-      <image
-                type="source"
-            >https://raw.githubusercontent.com/aTrainTranscription/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_4.png</image>
+      <image type="source">https://raw.githubusercontent.com/JuergenFleiss/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_4.png</image>
     </screenshot>
     <screenshot>
       <caption>Transcription in progress.</caption>
-      <image
-                type="source"
-            >https://raw.githubusercontent.com/aTrainTranscription/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_5.png</image>
+      <image type="source">https://raw.githubusercontent.com/JuergenFleiss/aTrain/865b4291a31cdfa8d1ab6a5e31998a6df28f752b/share/screenshots/screenshot_5.png</image>
     </screenshot>
   </screenshots>
   <developer id="io.github.juergenfleiss">
@@ -72,8 +59,7 @@
     <release version="1.5.0" date="2026-09-21" />
     <release version="1.4.2" date="2026-02-12">
       <description>
-        <p
-                >First release for Flatpak. Includes all features up to aTrain 1.4.1 and all bugfixes and minor improvements (CPU thread setting) for the next minor aTrain 1.4.2 Windows release.</p>
+        <p>First release for Flatpak. Includes all features up to aTrain 1.4.1 and all bugfixes and minor improvements (CPU thread setting) for the next minor aTrain 1.4.2 Windows release.</p>
       </description>
     </release>
   </releases>

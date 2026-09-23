@@ -101,6 +101,11 @@ dev = [
   "bandit[toml]>=1.9.0",
   "pip-audit>=2.10.0",
 ]
+# Tools for .github/scripts/prepare-flatpak.py (not part of the app).
+flatpak = [
+  "packaging==26.3",
+  "ruamel.yaml==0.19.1",
+]
 
 [tool.bandit]
 # CI runs `bandit -r aTrain aTrain_core`; these excludes keep ad-hoc local

@@ -1,162 +1,97 @@
 # Flatpak releases
 
-[`.github/workflows/flatpak.yml`](../../.github/workflows/flatpak.yml) replaces
-the manual two-repository process in `JuergenFleiss/atrain2flatpak`. It packages
-both `aTrain` and `aTrain_core` from this repository in one install. The private
-notes repository is no longer a build input.
+aTrain is published on Flathub as
+[`io.github.juergenfleiss.aTrain`](https://github.com/flathub/io.github.juergenfleiss.aTrain).
+[`flatpak.yml`](../../.github/workflows/flatpak.yml) builds it and prepares the
+Flathub update. Flathub builds and publishes the app itself.
 
-## What runs
+## Files
 
-On a `v*` tag, a manual dispatch, or a relevant pull request, the workflow:
+- [`io.github.juergenfleiss.aTrain.yml`](io.github.juergenfleiss.aTrain.yml):
+  the manifest template. It covers permissions, bundled models and the app module.
+- [`prepare-flatpak.py`](../../.github/scripts/prepare-flatpak.py): writes
+  `flatpak-release/`, which contains:
+  - `io.github.juergenfleiss.aTrain.yml`: the template, pinned to the current
+    commit and tag. This is the file submitted to Flathub.
+  - `local.yml`: the same manifest, built from the checkout.
+  - `atrain_python_dependencies.json`: the offline pip sources. The script runs
+    `uv export --format pylock.toml`, and `packaging`'s PEP 751 selector picks
+    one wheel per package for each CPU architecture of the GNOME 50 runtime
+    (CPython 3.13, glibc 2.42). A package without a matching wheel fails
+    generation, unless it is on the reviewed sdist allowlist.
 
-1. Exports the locked GUI dependencies as one PEP 751 `pylock.toml` file without
-   development packages or the local project. PyCairo, PyGObject, and its typing
-   stubs are omitted because GNOME Platform already supplies the runtime bindings.
-   No full ML environment is installed just to generate sources.
-2. Generates an offline dependency manifest using `req2flatpak==0.3.1` for
-   CPython 3.13 / GNOME 50. The preparation script evaluates pylock package
-   markers separately for `x86_64` and `aarch64`, then passes its locked
-   artifacts to req2flatpak's wheel selector and module generator. URLs and
-   SHA-256 hashes come directly from the exported lock; generation does not query
-   PyPI. Unsupported binary packages fail preparation instead of silently
-   attempting a build.
-3. Runs Flathub's official `flatpak-builder-lint` manifest check on the generated
-   submission files and its AppStream check on the tracked project metadata.
-   After each native build, it also checks
-   the Flatpak build directory and exported OSTree repository. These checks are
-   gating: a linter error stops the workflow before submission.
-4. Builds on native `ubuntu-24.04` and `ubuntu-24.04-arm` runners with the GNOME
-   50 SDK installed from Flathub. The jobs remove unused hosted-runner
-   toolchains, cached tools, and container images before installing the SDK to
-   leave space for the ML wheels, models, build state, and bundles. ARM excludes
-   x86 NVIDIA and Triton dependencies; x86 retains its CUDA libraries. Models
-   stay bundled with the current Flathub archive hashes and revision-pinned
-   `.gitattributes` files.
-5. Pull requests that change only application code (`aTrain/`, `aTrain_core/`)
-   stop after steps 1-3. The native builds run for tags, manual runs, and PRs
-   touching packaging inputs: this workflow and its script, `packaging/flatpak/`,
-   `flatpak/`, `share/`, `pyproject.toml`, or `uv.lock`.
-6. For release tags and manual runs, uploads architecture-specific `.flatpak`
-   bundles and checksums. Pull requests skip costly bundle compression after
-   validating both native builds and their Flathub lints. All runs upload a
-   separate `aTrain-flathub-sources` artifact containing the reviewable manifest
-   files. Bundles are workflow artifacts; Flathub builds the source manifest
-   itself rather than accepting these bundles for publication.
-7. For stable release tags, optionally creates or updates a Flathub PR after
-   **both** architectures pass. Flathub's test build and maintainer merge remain
-   the final publication steps.
+  The script also checks that the tag, `aTrain/version.py` and the newest
+  AppStream release all agree. RC tags such as `v1.5.0-rc1` only need to match
+  the base version, and are never submitted to Flathub.
 
-Pull request builds use the checked-out source, including fork commits. The
-submission artifact always retains the public repository URL and immutable git
-commit. A tag must match both `aTrain/version.py` and the newest release in the
-tracked AppStream metadata. The metadata is installed directly from the pinned
-source checkout; no release-specific XML is generated.
+  The script's own tools (`packaging`, `ruamel.yaml`) are pinned in the `flatpak`
+  dependency group in `pyproject.toml` and locked in `uv.lock`.
 
-This workflow is independent of the Windows MSIX release and does not replace
-the normal application CI checks. It verifies packaging and Flathub policy, but
-does not run the installed application; functional and hardware behavior remain
-covered by normal CI and testing on the intended hardware.
+## Workflow
 
-## One-time GitHub setup
+The workflow runs on `v*` tags, on manual runs, and on PRs that change packaging
+inputs.
 
-Create a fork of
-[`flathub/io.github.juergenfleiss.aTrain`](https://github.com/flathub/io.github.juergenfleiss.aTrain).
-In **aTrainTranscription/aTrain**, configure:
+1. **prepare** generates `flatpak-release/`.
+2. **build** runs natively on GitHub's `ubuntu-24.04` (x86_64) and
+   `ubuntu-24.04-arm` (aarch64) runners. It uses Flathub's `gnome-50` container
+   and the Flatpak project's
+   [`flatpak-builder` action](https://github.com/flatpak/flatpak-github-actions).
+   Each build:
+   - lints the Flathub manifest before building and the repository afterwards,
+     the two checks Flathub runs;
+   - builds the submitted manifest on tags and `local.yml` otherwise;
+   - imports the main Python packages inside the Flatpak as a smoke test;
+   - on tags and manual runs, uploads a `.flatpak` bundle for testing, kept 14
+     days.
+3. **submit** runs for stable tags once both builds pass. It opens or updates a
+   PR against the Flathub repository. Test the Flathub PR build, then merge it to
+   publish.
 
-- Repository variable **`FLATHUB_FORK`**: the fork's `owner/repository`, for
-  example `JuergenFleiss/io.github.juergenfleiss.aTrain`.
-- Repository secret **`FLATHUB_TOKEN`**: a token that can push packaging branches
-  to that fork and create/update pull requests against the Flathub repository.
-  A classic PAT with `public_repo` scope can cover this public fork workflow.
-  An installed GitHub App with appropriate repository access and Contents/
-  Pull requests write permissions is another option; fine-grained PATs can be
-  limited by the repositories' different owners. Follow the
-  [PR action's fork authentication guidance](https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#push-pull-request-branches-to-a-fork).
+### One-time setup
 
-Without these settings, builds still produce artifacts and the workflow reports
-that submission was skipped. The normal `GITHUB_TOKEN` cannot push to an
-external fork. Cross-repository credentials are used only in the submission
-job, never in branch or fork PR builds.
+Fork the Flathub repository. Then add these to `aTrainTranscription/aTrain`:
 
-Push a stable `vVERSION` tag after updating the package version and running the
-normal checks. The generated branch is `atrain/vVERSION`; repeated runs update
-the same PR. Manual runs default to artifacts only. To submit a manual run,
-select a stable release tag as its ref and enable **submit**. Pre-release tags
-produce artifacts without a Flathub stable submission.
+- Variable `FLATHUB_FORK`: the fork's `owner/repo`. Submission is skipped while
+  this is unset.
+- Secret `FLATHUB_TOKEN`: a classic PAT with `public_repo` scope. It must be
+  able to push to the fork and open PRs on Flathub
+  ([details](https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#push-pull-request-branches-to-a-fork)).
 
-Install and test Flathub's resulting PR build, then merge it when ready. A
-successful official Flathub build publishes the update, as described in
-[Flathub's update workflow](https://docs.flathub.org/docs/for-app-authors/maintenance#creating-updates).
+### Releasing
 
-## Deliberate build exceptions
+1. Bump `aTrain/version.py`.
+2. Add a `<release>` to the AppStream metadata, ideally with release notes.
+3. Push the `vVERSION` tag.
 
-Unlike the manual `req2flatpak` CLI command, preparation uses its Python API
-so it can keep the exact locked artifacts and architecture-specific markers.
-It supplies GNOME 50's CPython 3.13 / glibc 2.42 compatibility tags because
-req2flatpak 0.3.1's built-in Linux targets stop at glibc 2.35. The generated pip
-command disables network access, build isolation, and dependency resolution,
-and ignores preinstalled packages so the selected locked artifacts are used.
-req2flatpak is a preparation/test tool, not an application dependency.
-The published 0.3.1 release requires `packaging<22`, so preparation pins
-`packaging==21.3` in its isolated tool environment.
+To resubmit, re-run the failed jobs of the tag's workflow run.
 
-GNOME 50 intentionally keeps Python 3.13 for this release. Although the current
-NumPy 2.4.6 pin also supports Python 3.14, moving to GNOME 51 still requires
-regenerating and testing every native dependency and the TorchCodec artifacts.
-Changing only the runtime number is not sufficient.
+## Local build
 
-The project pins TorchCodec 0.10.0, matching the previously published Flatpak.
-The architecture-specific sources in `pyproject.toml` reproduce its artifact
-selection: x86 uses the PyPI wheel and Linux ARM64 uses the `+cu128` wheel from
-the official PyTorch index. Both variants are recorded in `uv.lock` and emitted
-normally by req2flatpak; the manifest has no TorchCodec-specific module.
-
-The SDK provides the compiler and standard Python build tools. Approved
-source-only dependencies (`julius`, `proxy-tools`) build with isolation and
-dependency resolution disabled. Review the allowlist before adding another
-source build.
-
-To update the SDK, change the manifest runtime and workflow SDK install together,
-then update the generator's CPython/platform tags. When the TorchCodec version
-changes, regenerate `uv.lock` and verify both architecture artifacts. When model
-archives change, update and verify their hashes too.
-
-## Local preparation and build
-
-Allow roughly 40 GB of free space for an x86 build, including downloads,
-build/cache state, the exported repository, and its bundle, in addition to the
-installed SDK. The CUDA libraries dominate this requirement. Their bundle
-compression can take over an hour, so CI skips bundling on pull requests after
-the native build and Flathub linters pass.
-
-From the repository root:
+This needs the `org.flatpak.Builder` app from Flathub and about 40 GB of free
+space. The CUDA wheels take most of it.
 
 ```bash
-uv export --locked --extra gui --no-dev --no-emit-project \
-  --no-emit-package pycairo --no-emit-package pygobject \
-  --no-emit-package pygobject-stubs \
-  --format pylock.toml --output-file pylock.flatpak.toml
-uv run --no-project --with req2flatpak==0.3.1 --with packaging==21.3 --with pyyaml==6.0.3 \
-  python .github/scripts/prepare-flatpak.py \
-    --lock pylock.flatpak.toml \
-    --commit "$(git rev-parse HEAD)" \
-    --output-dir .flatpak-work --local-source "$PWD"
-flatpak run org.flatpak.Builder --force-clean --disable-rofiles-fuse --user \
-  --install-deps-from=flathub --mirror-screenshots-url=https://dl.flathub.org/media --repo=repo \
-  flatpak_app .flatpak-work/io.github.juergenfleiss.aTrain.yml
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder builddir flatpak_app
-flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
-flatpak build-bundle repo aTrain-local.flatpak io.github.juergenfleiss.aTrain
+uv run --isolated --only-group flatpak python .github/scripts/prepare-flatpak.py
+flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub \
+  --force-clean flatpak_app flatpak-release/local.yml
+flatpak run io.github.juergenfleiss.aTrain
 ```
 
-Install `org.flatpak.Builder` from Flathub first; it provides a current
-flatpak-builder and the linter, and installs the GNOME 50 SDK/runtime on demand.
-Run from a directory under your home: the builder sandbox cannot see `/tmp`. A native ARM build
-needs an ARM machine; setting `--arch=aarch64` on an x86 machine does not provide
-emulation. Omit `--local-source` to generate the source-pinned Flathub copy, and
-add `--tag vVERSION` when preparing a tagged release. The committed AppStream
-metadata must already contain the release version as its newest entry.
+`local.yml` copies the working tree, including uncommitted changes, but skips
+git-ignored paths such as `.venv` and bundles.
 
-Run the lightweight generator tests with `python -m pytest
-tests/unit/test_prepare_flatpak.py`. They need `req2flatpak==0.3.1`, `packaging`,
-PyYAML and pytest, without Torch or the desktop libraries.
+The tests in `tests/unit/test_prepare_flatpak.py` generate sources from the real
+`uv.lock`. A dependency update without a matching Linux wheel therefore fails the
+fast unit tests.
+
+## Maintenance notes
+
+- **Runtime:** to move to a newer GNOME runtime, update `runtime-version`, the
+  container tag in the workflow, and `PYTHON`/`GLIBC_MINOR` in the script
+  together. Every native wheel then has to be regenerated and tested.
+- **aarch64 wheels:** on Linux aarch64, `torch` and `torchcodec` come from the
+  PyTorch `cu128` index (see `[tool.uv.sources]`). The x86_64 wheels come from
+  PyPI.
+- **Models:** the bundled models are pinned to Hugging Face commits. Update the
+  URL and `sha256` together.
