@@ -287,6 +287,8 @@ jobs:
           uv venv
           uv pip install --no-deps .
           uv pip install platformdirs pyyaml show-in-file-manager huggingface_hub pytest
+          # Pinned tools of .github/scripts/prepare-flatpak.py, as in flatpak.yml.
+          uv pip install --group flatpak
 
       - name: Run unit tests
         # `uv run --no-sync` finds the venv we just built and invokes python

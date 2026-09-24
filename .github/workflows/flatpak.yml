@@ -1,0 +1,171 @@
+name: Flatpak
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/flatpak.yml"
+      - ".github/scripts/prepare-flatpak.py"
+      - "packaging/flatpak/**"
+      - "!packaging/flatpak/README.md"
+      - "flatpak/**"
+      - "share/**"
+      - "aTrain/version.py"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  prepare:
+    name: Generate manifests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.prepare.outputs.version }}
+      stable: ${{ steps.prepare.outputs.stable }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.1.0
+      - id: prepare
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: |
+          uv run --isolated --locked --only-group flatpak \
+            python .github/scripts/prepare-flatpak.py ${TAG:+--tag "$TAG"} >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v7
+        id: upload
+        with:
+          name: flatpak-manifests
+          path: flatpak-release/
+          if-no-files-found: error
+          overwrite: true
+      - name: Link manifests in the job summary
+        env:
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          echo "Flathub manifests: [flatpak-manifests]($URL)" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # CUDA wheels and bundle compression take time.
+    timeout-minutes: 180
+    env:
+      # Tags build the exact manifest submitted to Flathub; other runs build the
+      # checkout, which also works for fork PRs.
+      MANIFEST: flatpak-release/${{ github.ref_type == 'tag' && 'io.github.juergenfleiss.aTrain.yml' || 'local.yml' }}
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+      # Unused host toolchains are mounted only to delete them: the CUDA
+      # wheels, bundled models, build, repository and bundle need about 40 GB.
+      options: >-
+        --privileged
+        -v /usr/share/dotnet:/unused/dotnet
+        -v /usr/local/lib/android:/unused/android
+        -v /usr/local/.ghcup:/unused/ghcup
+        -v /opt/hostedtoolcache:/unused/toolcache
+        -v /usr/local/share/powershell:/unused/powershell
+        -v /usr/share/swift:/unused/swift
+        -v /usr/lib/jvm:/unused/jvm
+        -v /opt/az:/unused/az
+    steps:
+      - name: Free disk space
+        run: rm -rf /unused/*/* && df -h .
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: flatpak-manifests
+          path: flatpak-release
+      - name: Lint Flathub manifest
+        run: flatpak-builder-lint --exceptions --gha-format manifest flatpak-release/io.github.juergenfleiss.aTrain.yml
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: ${{ env.MANIFEST }}
+          arch: ${{ matrix.arch }}
+          branch: stable
+          # Flathub builds its own bundles; ours are for testing tagged releases.
+          build-bundle: ${{ github.event_name != 'pull_request' }}
+          bundle: aTrain.flatpak
+          upload-artifact: false
+          # The downloads exceed the GitHub cache quota.
+          cache: false
+          mirror-screenshots-url: https://dl.flathub.org/media
+      - name: Smoke-test the installed dependencies
+        run: |
+          # flatpak build, unlike flatpak-builder --run, needs no rofiles-fuse,
+          # which the container cannot start.
+          flatpak build flatpak_app python3 -c \
+            'import aTrain.app, faster_whisper, nicegui, pyannote.audio, torch, webview'
+          df -h .
+      - name: Lint repository
+        # The same check Flathub runs on its builds.
+        run: flatpak-builder-lint --exceptions --gha-format repo repo
+      - uses: actions/upload-artifact@v7
+        id: upload
+        if: github.event_name != 'pull_request'
+        with:
+          name: aTrain-${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          path: aTrain.flatpak
+          if-no-files-found: error
+          # The bundle is already compressed.
+          compression-level: 0
+          retention-days: 14
+      - name: Link bundle in the job summary
+        if: github.event_name != 'pull_request'
+        env:
+          NAME: aTrain-${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+        run: |
+          echo "Flatpak bundle: [$NAME]($URL)" >> "$GITHUB_STEP_SUMMARY"
+
+  submit:
+    name: Open Flathub PR
+    needs: [prepare, build]
+    # Stable release tags only; FLATHUB_FORK opts in (see packaging/flatpak/README.md).
+    if: >-
+      github.ref_type == 'tag' && needs.prepare.outputs.stable == 'true' &&
+      vars.FLATHUB_FORK != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          repository: flathub/io.github.juergenfleiss.aTrain
+          path: flathub
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: flatpak-manifests
+          path: flatpak-release
+      - run: cp flatpak-release/{io.github.juergenfleiss.aTrain.yml,atrain_python_dependencies.json} flathub/
+      - uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.FLATHUB_TOKEN }}
+          path: flathub
+          push-to-fork: ${{ vars.FLATHUB_FORK }}
+          branch: update-${{ needs.prepare.outputs.version }}
+          commit-message: Update to ${{ needs.prepare.outputs.version }}
+          title: Update to ${{ needs.prepare.outputs.version }}
+          body: |
+            Generated from ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}; native x86_64 and aarch64 builds and the Flathub linters passed in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.

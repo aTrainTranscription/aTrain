@@ -25,3 +25,11 @@ data/
 .env.*.local
 .vscode
 .nicegui/
+
+# Generated Flatpak manifests, sources and build outputs.
+/.flatpak-work/
+/.flatpak-builder/
+/flatpak-release/
+/flatpak_app/
+/repo/
+/*.flatpak
