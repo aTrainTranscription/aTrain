@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
@@ -11,6 +12,7 @@ import pytest
 pytest.importorskip("packaging", minversion="26.3")
 pytest.importorskip("ruamel.yaml")
 from packaging.pylock import Pylock
+from packaging.utils import parse_wheel_filename
 from ruamel.yaml import YAML
 
 ROOT = Path(__file__).parents[2]
@@ -39,6 +41,20 @@ def test_uv_lock_generates_flathub_sources(tmp_path: Path, capsys) -> None:
         urls = [source["url"] for source in module["sources"]]
         assert any("/torch-" in url for url in urls)
         assert all(url.startswith("https://") for url in urls)
+        if arch == "aarch64":
+            wheels = [
+                (filename, parse_wheel_filename(filename))
+                for url in urls
+                if (filename := Path(unquote(urlsplit(url).path)).name).endswith(".whl")
+            ]
+            cuda_wheels = [
+                filename for filename, (_, version, _, _) in wheels if "+cu" in str(version)
+            ]
+            nvidia_wheels = [
+                filename for filename, (name, _, _, _) in wheels if str(name).startswith("nvidia-")
+            ]
+            assert not cuda_wheels, f"aarch64 output includes CUDA wheels: {cuda_wheels}"
+            assert not nvidia_wheels, f"aarch64 output includes NVIDIA wheels: {nvidia_wheels}"
 
     def atrain_source(manifest: str) -> dict:
         modules = YAML(typ="safe").load(tmp_path / manifest)["modules"]

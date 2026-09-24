@@ -90,8 +90,9 @@ fast unit tests.
 - **Runtime:** to move to a newer GNOME runtime, update `runtime-version`, the
   container tag in the workflow, and `PYTHON`/`GLIBC_MINOR` in the script
   together. Every native wheel then has to be regenerated and tested.
-- **aarch64 wheels:** on Linux aarch64, `torch` and `torchcodec` come from the
-  PyTorch `cu128` index (see `[tool.uv.sources]`). The x86_64 wheels come from
-  PyPI.
+- **aarch64 wheels:** Linux aarch64 uses CPU-only PyTorch from PyPI, with no
+  CUDA or NVIDIA wheels. TorchCodec is a transitive dependency of pyannote,
+  without an application-level pin. Linux x86_64 also uses PyPI; the explicit
+  PyTorch `cu128` index is reserved for Windows.
 - **Models:** the bundled models are pinned to Hugging Face commits. Update the
   URL and `sha256` together.
