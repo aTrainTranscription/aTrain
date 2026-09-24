@@ -25,3 +25,8 @@ data/
 .env.*.local
 .vscode
 .nicegui/
+
+# Local state of AI coding agents (shared instructions live in AGENTS.md)
+.claude/settings.local.json
+.codex/
+CLAUDE.local.md

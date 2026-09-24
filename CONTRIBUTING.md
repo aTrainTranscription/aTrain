@@ -2,7 +2,8 @@
 
 aTrain uses [uv](https://docs.astral.sh/uv/) for environment and dependency
 management. uv is the recommended workflow for local development and is what
-CI uses.
+CI uses. If you work with an AI coding agent, [AGENTS.md](AGENTS.md) holds
+the repo-specific notes it should read first.
 
 ```bash
 uv sync                 # install runtime dependencies
