@@ -21,6 +21,8 @@ Additional download types are listed on the
 Rolling aTrain out to managed machines? See
 [Windows deployment](deployment-windows.md).
 
+Removing aTrain again: see [Uninstalling aTrain](uninstall.md).
+
 How release builds are signed: see the [Code signing policy](code-signing-policy.md). How to check a downloaded release: see [Verifying a release](verifying-releases.md).
 
 ## Install from source with pip
