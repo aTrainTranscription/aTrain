@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-"""Refresh the per-file hashes in models.json from the Hugging Face Hub.
+"""Refresh the per-file hashes and the sizes in models.json from the Hugging Face Hub.
 
 Maintainer tool, not part of the shipped package and never run in CI. Use it
 whenever a model is added to models.json or its `revision` changes; the updated
-hashes then show up as a reviewable diff, like a lockfile.
+hashes and sizes then show up as a reviewable diff, like a lockfile.
 
-    scripts/refresh_model_hashes.py            # write the hashes into models.json
+    scripts/refresh_model_hashes.py            # write hashes and sizes into models.json
     scripts/refresh_model_hashes.py --check    # compare only, exit 1 on drift
     scripts/refresh_model_hashes.py tiny base  # limit to specific models
 
-The Hub reports two kinds of hash, and which one applies depends on how the file
-is stored, so the algorithm is written into the manifest rather than guessed
-from the hash length later:
-
-    LFS files (the weights)   ->  sha256 of the file content
-    everything else           ->  git blob SHA-1 over "blob <size>\\0" + content
+The Hub reports a sha256 only for LFS files (the weights); for everything else
+it has just a git blob SHA-1. The script downloads those small files and hashes
+them itself, so every entry is "sha256:<hash of the file content>". The
+algorithm is written into the entry rather than guessed from the hash length.
 
 `--check` needs network access and is meant to be run by hand: drift means the
 Hub no longer serves what we pinned, which is something a human has to judge.
@@ -35,11 +33,22 @@ from huggingface_hub import HfApi, hf_hub_download
 MODELS_JSON = Path(__file__).resolve().parents[1] / "aTrain_core" / "data" / "models.json"
 
 
-def fetch_file_hashes(repo_id: str, revision: str) -> dict[str, str]:
-    """Return {filename: "sha256:<hash>"} for every file of a model repo."""
+def human_size(size: int) -> str:
+    """Decimal units with two decimals, as the Hub shows file sizes."""
+    if size >= 1_000_000_000:
+        return f"{size / 1_000_000_000:.2f} GB"
+    return f"{size / 1_000_000:.2f} MB"
+
+
+def fetch_pinned_fields(repo_id: str, revision: str) -> dict:
+    """Return the models.json fields that follow from a repo revision:
+    the per-file hashes, and the total size the download progress bar and
+    the Models page show."""
     info = HfApi().model_info(repo_id, revision=revision, files_metadata=True)
     hashes: dict[str, str] = {}
+    size = 0
     for sibling in info.siblings or []:
+        size += sibling.size or 0
         lfs = getattr(sibling, "lfs", None)
         sha256 = getattr(lfs, "sha256", None) if lfs else None
         if not sha256:
@@ -49,7 +58,15 @@ def fetch_file_hashes(repo_id: str, revision: str) -> dict[str, str]:
             local = hf_hub_download(repo_id, sibling.rfilename, revision=revision)
             sha256 = hashlib.sha256(Path(local).read_bytes()).hexdigest()
         hashes[sibling.rfilename] = f"sha256:{sha256}"
-    return dict(sorted(hashes.items()))
+    return {
+        "files": dict(sorted(hashes.items())),
+        "repo_size": size,
+        "repo_size_human": human_size(size),
+    }
+
+
+def print_drift(label: str, pinned: object, hub: object) -> None:
+    print(f"    {label}\n      pinned: {pinned}\n      hub:    {hub}")
 
 
 def main() -> int:
@@ -62,7 +79,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    config = json.loads(MODELS_JSON.read_text())
+    config = json.loads(MODELS_JSON.read_text(encoding="utf-8"))
     names = args.models or list(config)
     unknown = [name for name in names if name not in config]
     if unknown:
@@ -71,26 +88,32 @@ def main() -> int:
     drifted = []
     for name in names:
         model = config[name]
-        fetched = fetch_file_hashes(model["repo_id"], model["revision"])
+        fetched = fetch_pinned_fields(model["repo_id"], model["revision"])
+        hashes = fetched["files"]
         if args.check:
-            if model.get("files") != fetched:
+            if any(model.get(field) != value for field, value in fetched.items()):
                 drifted.append(name)
                 print(f"DRIFT {name}")
-                for filename in sorted(set(fetched) | set(model.get("files", {}))):
+                for filename in sorted(set(hashes) | set(model.get("files", {}))):
                     pinned = model.get("files", {}).get(filename)
-                    current = fetched.get(filename)
+                    current = hashes.get(filename)
                     if pinned != current:
-                        print(f"    {filename}\n      pinned: {pinned}\n      hub:    {current}")
+                        print_drift(filename, pinned, current)
+                for field in ("repo_size", "repo_size_human"):
+                    if model.get(field) != fetched[field]:
+                        print_drift(field, model.get(field), fetched[field])
             else:
-                print(f"ok    {name} ({len(fetched)} files)")
+                print(f"ok    {name} ({len(hashes)} files)")
         else:
-            model["files"] = fetched
-            print(f"{name}: {len(fetched)} files")
+            model.update(fetched)
+            print(f"{name}: {len(hashes)} files, {fetched['repo_size_human']}")
 
     if args.check:
         return 1 if drifted else 0
 
-    MODELS_JSON.write_text(json.dumps(config, indent=4) + "\n")
+    MODELS_JSON.write_text(
+        json.dumps(config, indent=4, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     print(f"\nwrote {MODELS_JSON}")
     return 0
 

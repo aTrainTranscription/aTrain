@@ -128,6 +128,8 @@ Developers create new branches on their own forks/repositories which are either 
 
 If you want to contribute to a collaborative feature branch, the same steps apply as for contributing a full feature/bugfix to `develop`, only that the base will be that feature branch rather than `develop`.
 
+To propose or add a transcription model, see [Adding a model](docs/adding-a-model.md).
+
 aTrain maintainers may:
 
 1. Reject a pull request - The feature may be deemed of no value to other aTrain users and not incorporated into the aTrain distribution. The discussion about this will be documented in the pull request comments. The developer may still provide his version to others, but there will be no support for this feature from aTrain maintainers. Feel of course free to contact us beforehand with any ideas.
