@@ -25,7 +25,7 @@ dependencies = [
   # CTranslate2 extra (a incompatible fork of Ctranslate2 used by faster-whisper):
   "crisperwhisper[transformers]==2.0.3",
   "transformers==4.57.3",
-  "pandas==2.3.3",
+  "pandas==3.0.6",
   "pyannote.audio==4.0.7",
   "numpy==2.4.6",
   "werkzeug==3.1.8",
@@ -38,7 +38,7 @@ dependencies = [
   "torchaudio==2.9.1+cu128; sys_platform == 'win32'",
   "torchaudio==2.9.1; sys_platform != 'win32'",
   "typer==0.27.2",
-  "platformdirs==4.11.9",
+  "platformdirs==4.11.12",
   "jiwer==4.0.0",
 ]
 
@@ -48,7 +48,7 @@ dependencies = [
 # headless CLI (`aTrain_core transcribe …`, `aTrain init`) works on the
 # base install.
 gui = [
-  "nicegui==3.17.0",
+  "nicegui==3.17.1",
   "pywebview==6.2.1",
   "pywebview[GTK]; sys_platform == 'linux'",
   "show-in-file-manager==1.1.6",
