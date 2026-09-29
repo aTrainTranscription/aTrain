@@ -139,33 +139,39 @@ jobs:
         run: |
           echo "Flatpak bundle: [$NAME]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
-  submit:
-    name: Open Flathub PR
+  flathub-files:
+    name: Push packaging/flathub branch
     needs: [prepare, build]
-    # Stable release tags only; FLATHUB_FORK opts in (see packaging/flatpak/README.md).
-    if: >-
-      github.ref_type == 'tag' && needs.prepare.outputs.stable == 'true' &&
-      vars.FLATHUB_FORK != ''
+    # Stable release tags only. The Flathub PR is opened by hand (see
+    # packaging/flatpak/README.md).
+    if: github.ref_type == 'tag' && needs.prepare.outputs.stable == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
+      # Keeps the credentials for the push below.
       - uses: actions/checkout@v7
         with:
-          repository: flathub/io.github.juergenfleiss.aTrain
-          path: flathub
-          persist-credentials: false
+          ref: develop
       - uses: actions/download-artifact@v8
         with:
           name: flatpak-manifests
           path: flatpak-release
-      - run: cp flatpak-release/{io.github.juergenfleiss.aTrain.yml,atrain_python_dependencies.json} flathub/
-      - uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ secrets.FLATHUB_TOKEN }}
-          path: flathub
-          push-to-fork: ${{ vars.FLATHUB_FORK }}
-          branch: update-${{ needs.prepare.outputs.version }}
-          commit-message: Update to ${{ needs.prepare.outputs.version }}
-          title: Update to ${{ needs.prepare.outputs.version }}
-          body: |
-            Generated from ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ github.ref_name }}; native x86_64 and aarch64 builds and the Flathub linters passed in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}.
+      - name: Commit and push
+        env:
+          BRANCH: flathub/update-${{ needs.prepare.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          COMPARE: ${{ github.server_url }}/${{ github.repository }}/compare/develop...flathub/update-${{ needs.prepare.outputs.version }}?expand=1
+        run: |
+          mkdir -p packaging/flathub
+          cp flatpak-release/{io.github.juergenfleiss.aTrain.yml,atrain_python_dependencies.json} packaging/flathub/
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add packaging/flathub
+          git commit -m "Update packaging/flathub to $VERSION"
+          git push --force origin "$BRANCH"
+          # Pushes by GITHUB_TOKEN start no workflows; a PR opened by a person
+          # runs the required CI checks.
+          echo "Flathub files: [open the PR]($COMPARE)" >> "$GITHUB_STEP_SUMMARY"

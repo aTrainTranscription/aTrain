@@ -44,27 +44,37 @@ inputs.
    - imports the main Python packages inside the Flatpak as a smoke test;
    - on tags and manual runs, uploads a `.flatpak` bundle for testing, kept 14
      days.
-3. **submit** runs for stable tags once both builds pass. It opens or updates a
-   PR against the Flathub repository. Test the Flathub PR build, then merge it to
-   publish.
+3. **flathub-files** runs for stable tags once both builds pass. It commits the
+   two Flathub files to `packaging/flathub/` on the branch
+   `flathub/update-VERSION` and links the PR against `develop` in the job
+   summary. Once merged, `packaging/flathub/` holds the files of the latest
+   stable release.
 
-### One-time setup
-
-Fork the Flathub repository. Then add these to `aTrainTranscription/aTrain`:
-
-- Variable `FLATHUB_FORK`: the fork's `owner/repo`. Submission is skipped while
-  this is unset.
-- Secret `FLATHUB_TOKEN`: a classic PAT with `public_repo` scope. It must be
-  able to push to the fork and open PRs on Flathub
-  ([details](https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#push-pull-request-branches-to-a-fork)).
+The workflow never touches the Flathub repository: Flathub's
+[AI policy](https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy)
+forbids automated submission PRs, so a person opens them.
 
 ### Releasing
 
 1. Bump `aTrain/version.py`.
 2. Add a `<release>` to the AppStream metadata, ideally with release notes.
 3. Push the `vVERSION` tag.
+4. Open the PR linked in the workflow summary and merge it after CI passes.
+5. Copy the files to the Flathub repository and open the PR there yourself:
 
-To resubmit, re-run the failed jobs of the tag's workflow run.
+   ```bash
+   git clone git@github.com:flathub/io.github.juergenfleiss.aTrain.git
+   cd io.github.juergenfleiss.aTrain
+   git switch -c update-VERSION
+   cp ../aTrain/packaging/flathub/* .
+   git commit -am "Update to VERSION"
+   git push -u origin update-VERSION
+   ```
+
+6. Test the Flathub test build (comment `bot, build` to rebuild), then merge it
+   to publish.
+
+To regenerate the branch, re-run the tag's workflow run.
 
 ## Local build
 
