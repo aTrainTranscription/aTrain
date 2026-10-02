@@ -288,3 +288,12 @@ def test_long_pause_after_a_comma_starts_a_new_cue():
     cues = srt_cues([wait, okay], "en")
     assert [cue[2] for cue in cues] == ["Wait,", "okay."]
     assert cues[0][1] < 6.0
+
+
+def test_sentence_kept_as_one_word_is_split_like_other_text():
+    text = " This segment had no word timestamps, so it arrives as one long word for the splitter."
+    word = {"start": 0.0, "end": 6.0, "word": text, "speaker": "A"}
+    segment = {"start": 0.0, "end": 6.0, "text": text, "words": [word], "speaker": "A"}
+    document = srt_document([segment], "en")
+    assert netflix_issues(document, "en") == []
+    assert " ".join(" ".join(cue[2]) for cue in parse_srt(document)) == text.strip()

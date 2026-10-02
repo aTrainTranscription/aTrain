@@ -277,20 +277,33 @@ def _srt_split(words, profile):
 
 
 def _srt_words(segment, profile):
-    """Returns the timed words of a segment, spreading its time over its words if it has none."""
+    """Returns the timed words of a segment.
+
+    Text without word timestamps, a segment without words or one "word" holding a whole
+    sentence, gets its time spread over its words.
+    """
     words = [w for w in segment.get("words") or [] if w.get("start") is not None]
     text = str(segment.get("text") or "").strip()
-    if words or not text:
-        return words
-    tokens = (
-        [f" {token}" for token in text.split()] if profile.spaced else _srt_units(text, profile)
-    )
-    total, start = sum(len(token) for token in tokens), segment["start"]
-    for token in tokens:
-        end = start + (segment["end"] - segment["start"]) * len(token) / total
-        words.append({"start": start, "end": end, "word": token})
-        start = end
-    return words
+    if not words and text:
+        words = [{"start": segment["start"], "end": segment["end"], "word": f" {text}"}]
+    timed = []
+    for word in words:
+        token = str(word["word"])
+        if profile.spaced:
+            tokens = [f" {piece}" for piece in token.split()]
+        elif srt_length(token, profile) > profile.line_length:
+            tokens = _srt_units(token.strip(), profile)
+        else:
+            tokens = [token]
+        if len(tokens) < 2:
+            timed.append(word)
+            continue
+        total, start = sum(len(piece) for piece in tokens), word["start"]
+        for piece in tokens:
+            end = start + (word["end"] - word["start"]) * len(piece) / total
+            timed.append({**word, "start": start, "end": end, "word": piece})
+            start = end
+    return timed
 
 
 def _srt_combine(previous, cue, profile):

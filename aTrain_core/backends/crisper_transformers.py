@@ -35,39 +35,6 @@ def _suppress_encoder_attentions(model) -> None:
     encoder._atrain_encoder_attentions_suppressed = True
 
 
-def _append_word_text(text: str, word: str) -> str:
-    """Join Crisper words while keeping punctuation attached correctly."""
-    if not text:
-        return word
-    if word.startswith((",", ".", "!", "?", ";", ":", "%", ")", "]", "}")):
-        return text + word
-    if text.endswith(("(", "[", "{")):
-        return text + word
-    return f"{text} {word}"
-
-
-def group_word_segments(segments: list[dict]) -> list[dict]:
-    """Merge Crisper's word segments into readable output cues."""
-    grouped: list[dict] = []
-    for segment in segments:
-        if not grouped:
-            grouped.append({**segment, "words": list(segment.get("words", []))})
-            continue
-
-        current = grouped[-1]
-        gap = segment["start"] - current["end"]
-        same_speaker = segment.get("speaker") == current.get("speaker")
-        within_duration = segment["end"] - current["start"] <= 6.0
-        if not same_speaker or gap >= 1.0 or not within_duration:
-            grouped.append({**segment, "words": list(segment.get("words", []))})
-            continue
-
-        current["end"] = segment["end"]
-        current["text"] = _append_word_text(current["text"], segment["text"])
-        current["words"].extend(segment.get("words", []))
-    return grouped
-
-
 def transcribe(settings: Settings, model_path: Path, audio) -> dict:
     """Run CrisperWhisper in verbatim mode and normalize its word timestamps."""
     if settings.language == "auto-detect":
