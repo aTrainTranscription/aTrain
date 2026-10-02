@@ -85,13 +85,14 @@ def transcribe(settings: Settings):
     elif settings.device == Device.CPU:
         write_logfile("Transcribing in same process", settings.file_id)
         transcript = run_transcription(settings, model_path, audio_array)
+    language = transcript.pop("language", settings.language) if transcript else settings.language
     if settings.speaker_detection and transcript:
         transcript = run_speaker_detection(settings, audio_duration, audio_array, transcript)
     if backend == "crisper-transformers" and transcript:
         from aTrain_core.backends.crisper_transformers import group_word_segments
 
         transcript = {"segments": group_word_segments(transcript["segments"])}
-    create_output_files(transcript, settings.speaker_detection, settings.file_id)
+    create_output_files(transcript, settings.speaker_detection, settings.file_id, language)
     write_logfile("No speaker detection. Created output files", settings.file_id)
     add_processing_time_to_metadata(settings.file_id)
     write_logfile("Processing time added to metadata", settings.file_id)
@@ -163,7 +164,10 @@ def run_transcription(
             else settings.temperature,
         )
         segments = transcription_with_progress_bar(segments, info, settings.progress)
-        transcript = {"segments": [named_tuple_to_dict(s) for s in segments]}
+        transcript = {
+            "segments": [named_tuple_to_dict(s) for s in segments],
+            "language": info.language,
+        }
         write_logfile("Transcription successful", settings.file_id)
         if settings.device == Device.CPU:
             return transcript
