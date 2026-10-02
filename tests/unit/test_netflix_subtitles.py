@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 from aTrain_core.output_formats.netflix_subtitles import (
-    SRT_MAX_DURATION,
+    netflix_issues,
+    parse_srt,
     srt_cues,
     srt_document,
     srt_length,
@@ -23,52 +24,14 @@ from aTrain_core.output_formats.netflix_subtitles import (
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "srt"
 MOVIES = sorted(path.stem for path in FIXTURES.glob("*.json"))
-
-
-def _seconds(timestamp):
-    hours, minutes, rest = timestamp.split(":")
-    seconds, milliseconds = rest.split(",")
-    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000
-
-
-def parse_srt(text):
-    cues = []
-    for block in text.strip().split("\n\n"):
-        lines = block.split("\n")
-        start, end = lines[1].split(" --> ")
-        cues.append((_seconds(start), _seconds(end), lines[2:]))
-    return cues
-
-
-def netflix_issues(cues, language):
-    """Returns (rule, cue number) for every Netflix rule a parsed SRT breaks."""
-    profile = srt_profile(language)
-    issues = []
-    for index, (start, end, lines) in enumerate(cues):
-        number, duration, text = index + 1, end - start, " ".join(lines)
-        if any(srt_length(line, profile) > profile.line_length for line in lines):
-            issues.append(("max line length", number))
-        if len(lines) > 2:
-            issues.append(("two lines maximum", number))
-        if len(lines) == 2 and srt_length(text, profile) <= profile.line_length:
-            issues.append(("text can fit on one line", number))
-        if duration < profile.min_duration - 0.001:
-            issues.append(("minimum duration", number))
-        if duration > SRT_MAX_DURATION + 0.001:
-            issues.append(("maximum duration", number))
-        if duration > 0 and srt_length(text, profile) / duration > profile.chars_per_second + 0.01:
-            issues.append(("maximum characters per second", number))
-        if any(line != line.strip() or "  " in line for line in lines):
-            issues.append(("white space", number))
-        if "..." in text:
-            issues.append(("ellipses not three dots", number))
-        if index + 1 < len(cues):
-            gap = cues[index + 1][0] - end
-            if gap < profile.min_gap - 0.001:
-                issues.append(("two frames gap", number))
-            elif profile.min_gap + 0.001 < gap < profile.bridge_gap - 0.001:
-                issues.append(("bridge gaps", number))
-    return issues
+# Cues per movie clip that stay faster than the reading speed: the speech itself is faster,
+# and meeting the limit would mean rewording the transcript. Lower these when it improves.
+TOO_FAST = {
+    "detour": 6,
+    "his_girl_friday": 21,
+    "little_shop_of_horrors": 5,
+    "night_of_the_living_dead": 6,
+}
 
 
 def _render(segments, language):
@@ -93,14 +56,10 @@ def _segment(words, **extra):
 @pytest.mark.parametrize("movie", MOVIES)
 def test_movie_clips_follow_netflix_rules(movie):
     fixture = json.loads((FIXTURES / f"{movie}.json").read_text(encoding="utf-8"))
-    cues = _render(fixture["segments"], fixture["language"])
-    # Fast speech cannot always meet the reading speed without rewording the transcript.
-    issues = [
-        i
-        for i in netflix_issues(cues, fixture["language"])
-        if i[0] != "maximum characters per second"
-    ]
-    assert issues == []
+    issues = netflix_issues(srt_document(fixture["segments"], "en"), "en")
+    too_fast = [i for i in issues if i[0] == "maximum characters per second"]
+    assert [i for i in issues if i not in too_fast] == []
+    assert len(too_fast) <= TOO_FAST[movie]
 
 
 def test_movie_clips_keep_every_word():
@@ -163,7 +122,7 @@ def test_overlong_segment_is_split_into_cues_within_limits():
 
 def test_speaker_change_starts_a_new_cue():
     first = _segment(_words((0.0, 0.4, " Where"), (0.4, 0.8, " to")), speaker="SPEAKER_00")
-    second = _segment(_words((0.8, 1.2, " Home"), (1.2, 2.0, " now")), speaker="SPEAKER_01")
+    second = _segment(_words((1.5, 1.9, " Home"), (1.9, 2.7, " now")), speaker="SPEAKER_01")
     cues = srt_cues([first, second], "en")
     assert [(cue[2], cue[3]) for cue in cues] == [
         ("Where to", "SPEAKER_00"),
@@ -180,24 +139,113 @@ def test_too_short_cue_is_merged_into_the_next():
 def test_cue_is_held_for_reading_time_and_gaps_are_bridged():
     first = _segment(_words((0.0, 0.3, " No.")))
     second = _segment(_words((1.2, 1.6, " Yes.")))
-    third = _segment(_words((5.0, 5.4, " Maybe.")))
+    third = _segment(_words((5.0, 5.1, " Maybe.")))
     cues = srt_cues([first, second, third], "en")
     assert cues[0][1] == pytest.approx(1.2 - 2 / 24)  # gap under 0.5 s bridged to two frames
-    assert cues[1][1] == pytest.approx(1.2 + 5 / 6)  # held for the minimum duration
+    assert cues[1][1] == pytest.approx(1.6 + 0.5)  # held half a second past the speech
+    assert cues[2][1] == pytest.approx(5.0 + 5 / 6)  # held for the minimum duration
 
 
 def test_segment_without_words_is_kept():
     cues = srt_cues([{"start": 1.0, "end": 2.5, "text": " Hello there.", "words": []}], "en")
-    assert cues[0][:3] == [1.0, 2.5, "Hello there."]
+    assert [cue[2] for cue in cues] == ["Hello there."]
+    assert cues[0][0] == 1.0
+
+
+def test_long_segment_without_words_is_resegmented():
+    text = (
+        "This is a long fallback segment with enough words to wrap into several "
+        "different subtitle lines and it goes on for ten whole seconds."
+    )
+    document = srt_document([{"start": 0.0, "end": 10.0, "text": text}], "en")
+    assert netflix_issues(document, "en") == []
+    assert " ".join(" ".join(cue[2]) for cue in parse_srt(document)) == text
 
 
 def test_language_profiles():
     english, german, japanese, korean = (srt_profile(code) for code in ("en", "de", "ja", "ko"))
     assert (english.line_length, english.chars_per_second) == (42, 20)
     assert (german.line_length, german.chars_per_second) == (42, 17)
-    assert (japanese.line_length, japanese.min_duration, japanese.min_gap) == (13, 0.5, 0.0)
+    assert (japanese.line_length, japanese.min_duration, japanese.min_gap) == (13, 0.5, 2 / 24)
     assert srt_profile("auto-detect").line_length == 42
     assert srt_length("안녕 OK", korean) == 2 + 0.5 * 3
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [
+        ("ja", "HelloNetflixWorld", 8.5),
+        ("ja", "はい。", 3),
+        ("ko", "안녕…", 2.5),
+        ("th", "ที่" * 13, 13),
+    ],
+)
+def test_characters_are_counted_per_language(language, text, expected):
+    assert srt_length(text, srt_profile(language)) == expected
+
+
+def test_thai_lines_keep_marks_with_their_letters():
+    lines = srt_wrap("ที่" * 40, srt_profile("th"))
+    assert len(lines) == 2
+    assert not any(line[0] in "\u0e35\u0e48" for line in lines)
+
+
+@pytest.mark.parametrize(
+    ("language", "text", "expected"),
+    [("zh", "今天下雨，明天晴天。", "今天下雨 明天晴天"), ("ja", "はい、そうです。", "はい そうです"),  # noqa: RUF001
+     ("th", "ไปไหน? ไปบ้าน.", "ไปไหน ไปบ้าน")],
+)  # fmt: skip
+def test_punctuation_rules_per_language(language, text, expected):
+    words = _words((0.0, 3.0, text))
+    assert parse_srt(srt_document([_segment(words)], language))[0][2] == [expected]
+
+
+def test_names_are_not_split_across_lines():
+    lines = srt_wrap("Yesterday I met Alexander Hamilton near the station.", srt_profile("en"))
+    assert "Alexander\nHamilton" not in "\n".join(lines)
+
+
+def test_quick_speaker_turns_share_a_dual_speaker_cue():
+    yes = _segment(_words((0.0, 0.4, " Yes.")), speaker="A")
+    okay = _segment(_words((0.5, 1.2, " Okay.")), speaker="B")
+    document = srt_document([yes, okay], "en")
+    assert parse_srt(document)[0][2] == ["-Yes.", "-Okay."]
+    assert netflix_issues(document, "en") == []
+    assert parse_srt(srt_document([yes, okay], "fr"))[0][2] == ["- Yes.", "- Okay."]
+
+
+def test_speakers_within_a_segment_are_kept_apart():
+    words = _words((0.0, 0.35, " Yes."), (0.35, 0.7, " No."))
+    words[0]["speaker"], words[1]["speaker"] = "A", "B"
+    assert parse_srt(srt_document([_segment(words, speaker="A")], "en"))[0][2] == ["-Yes.", "-No."]
+
+
+def test_unresolvable_short_cue_is_reported():
+    first = _segment(_words((0.0, 0.4, " " + "word " * 9 + "end.")), speaker="A")
+    second = _segment(_words((0.5, 1.5, " " + "other " * 6 + "end.")), speaker="B")
+    issues = netflix_issues(srt_document([first, second], "en"), "en")
+    assert ("minimum duration", 1) in issues
+
+
+def test_too_fast_neighbours_are_merged_when_that_reads_slower():
+    first = _segment(_words((0.0, 0.7, " Please bring the paperwork tomorrow.")))
+    second = _segment(_words((1.2, 2.5, " I'll be there.")))
+    cues = srt_cues([first, second], "en")
+    assert [cue[2] for cue in cues] == ["Please bring the paperwork tomorrow. I'll be there."]
+    assert len(cues[0][2]) / (cues[0][1] - cues[0][0]) <= 20
+
+
+def test_cues_are_not_merged_across_a_long_silence():
+    first = _segment(_words((0.0, 0.7, " Please bring the paperwork tomorrow.")))
+    second = _segment(_words((3.0, 3.5, " I'll be there.")))
+    assert len(srt_cues([first, second], "en")) == 2
+
+
+def test_japanese_cues_keep_the_two_frame_gap():
+    cues = srt_cues(
+        [_segment(_words((0.0, 1.0, "はい。"))), _segment(_words((1.0, 2.0, "いいえ。")))], "ja"
+    )
+    assert len(cues) == 1 or cues[1][0] - cues[0][1] >= 2 / 24 - 1e-9
 
 
 def test_chinese_is_joined_without_spaces_and_wrapped_by_characters():
@@ -213,7 +261,7 @@ def test_chinese_is_joined_without_spaces_and_wrapped_by_characters():
 def test_srt_document_writes_netflix_cues():
     words = _words((0.0, 0.3, " Wait..."), (0.35, 0.6, " what?"))
     cues = _render([_segment(words)], "en")
-    assert cues == [(0.0, pytest.approx(5 / 6, abs=0.001), ["Wait… what?"])]
+    assert cues == [(0.0, pytest.approx(1.1, abs=0.001), ["Wait… what?"])]
 
 
 def test_word_pieces_spanning_long_silence_do_not_break_splitting():

@@ -1,6 +1,8 @@
 """Netflix-style subtitle cues built from Whisper word timestamps."""
 
+import re
 import time
+import unicodedata
 from dataclasses import dataclass
 
 # Subtitle rules from the Netflix Timed Text Style Guides. The per-language limits follow the
@@ -13,7 +15,36 @@ SRT_DEFAULT_LINE_LENGTH = 42
 SRT_DEFAULT_CHARS_PER_SECOND = 17
 SRT_MAX_DURATION = 7.0
 SRT_FRAME = 1 / 24
+SRT_LINGER = 0.5  # stay up about half a second after the speech ends, where there is room
 SRT_UNSPACED_LANGUAGES = {"ja", "zh", "th", "lo", "my", "km"}
+# Dashes for two speakers in one cue (first line, second line); other languages use "-" twice
+SRT_DIALOG_DASHES = {
+    **dict.fromkeys(
+        (
+            "ar",
+            "cs",
+            "es",
+            "fr",
+            "hu",
+            "id",
+            "it",
+            "ko",
+            "ms",
+            "pl",
+            "pt",
+            "ro",
+            "ru",
+            "sk",
+            "th",
+            "vi",
+        ),
+        ("- ", "- "),
+    ),
+    **dict.fromkeys(("fi", "he", "nl", "sr"), ("", "-")),
+    "bg": ("", "- "),
+}
+# Punctuation a language guide does not allow, replaced by a space
+SRT_NO_PUNCTUATION = {"ja": r"[。、]", "th": r"\?|\.(?=\s|$)", "zh": r"[，。,]|\.(?=\s|$)"}  # noqa: RUF001
 SRT_PUNCTUATION = (".", ",", "?", "!", ";", ":", "…", "。", "，", "、", "？", "！", "；", "：")  # noqa: RUF001
 SRT_SENTENCE_END = (".", "?", "!", "…", "。", "？", "！")  # noqa: RUF001
 # Pauses that end a sentence in unpunctuated text, as in Subtitle Edit's "add periods" step
@@ -37,7 +68,7 @@ SRT_EN_NO_BREAK_AFTER = {
 
 @dataclass(frozen=True)
 class SrtProfile:
-    """Netflix subtitle limits for one language."""
+    """Netflix subtitle rules for one language."""
 
     language: str
     line_length: int
@@ -46,29 +77,52 @@ class SrtProfile:
     min_gap: float
     bridge_gap: float
     spaced: bool
+    dashes: tuple
+    no_punctuation: str | None
 
 
 def srt_profile(language):
-    """Returns the Netflix subtitle limits for a Whisper language code."""
+    """Returns the Netflix subtitle rules for a Whisper language code."""
     language = str(language or "").split("-")[0].lower()
     language = "zh" if language == "yue" else language
-    japanese = language == "ja"  # Japanese allows 0.5 s cues and has no gap rules
     return SrtProfile(
         language=language,
         line_length=SRT_LINE_LENGTH.get(language, SRT_DEFAULT_LINE_LENGTH),
         chars_per_second=SRT_CHARS_PER_SECOND.get(language, SRT_DEFAULT_CHARS_PER_SECOND),
-        min_duration=0.5 if japanese else 5 / 6,
-        min_gap=0.0 if japanese else 2 * SRT_FRAME,
-        bridge_gap=0.0 if japanese else 0.5,
+        min_duration=0.5 if language == "ja" else 5 / 6,
+        min_gap=2 * SRT_FRAME,
+        bridge_gap=0.5,
         spaced=language not in SRT_UNSPACED_LANGUAGES,
+        dashes=SRT_DIALOG_DASHES.get(language, ("-", "-")),
+        no_punctuation=SRT_NO_PUNCTUATION.get(language),
     )
 
 
 def srt_length(text, profile):
-    """Counts characters the Netflix way: in Korean, Latin letters, spaces and punctuation count half."""
-    if profile.language == "ko":
-        return sum(1 if ord(char) >= 0x1100 else 0.5 for char in text)
-    return len(text)
+    """Counts characters the Netflix way.
+
+    Combining marks, such as Thai tone marks and upper or lower vowels, are not counted. In
+    Japanese and Korean, half-width characters, spaces and punctuation count half.
+    """
+    half = profile.language in ("ja", "ko")
+    return sum(
+        0.5 if half and unicodedata.east_asian_width(char) not in ("W", "F") else 1
+        for char in text
+        if char != "\n" and unicodedata.category(char) != "Mn"
+    )
+
+
+def _srt_units(text, profile):
+    """Splits text into the pieces a line can break between: words, or characters with their marks."""
+    if profile.spaced:
+        return text.split(" ")
+    units = []
+    for char in text:
+        if units and unicodedata.category(char) == "Mn":
+            units[-1] += char
+        else:
+            units.append(char)
+    return units
 
 
 def _srt_join(tokens, profile):
@@ -86,27 +140,42 @@ def _srt_join(tokens, profile):
     return text
 
 
+def _srt_name(previous, following):
+    """Whether two words look like parts of one name, which Netflix does not split."""
+    return (
+        previous[:1].isupper()
+        and following[:1].isupper()
+        and "I" not in (previous, following)
+        and not previous.endswith(SRT_PUNCTUATION)
+    )
+
+
 def srt_wrap(text, profile):
     """Splits text into at most two lines, preferring Netflix-style line breaks."""
     if srt_length(text, profile) <= profile.line_length:
         return [text]
     english = profile.language == "en"
     separator = " " if profile.spaced else ""
-    units = text.split(" ") if profile.spaced else list(text)
+    units = _srt_units(text, profile)
     best, best_score = [text], None
     for i in range(1, len(units)):
-        top, bottom = separator.join(units[:i]), separator.join(units[i:])
+        top = separator.join(units[:i]).rstrip()
+        bottom = separator.join(units[i:]).lstrip()
+        if not top or not bottom:
+            continue
+        previous, following = units[i - 1], units[i]
         top_length, bottom_length = srt_length(top, profile), srt_length(bottom, profile)
         score = abs(top_length - bottom_length)
         score += 100 * (max(top_length, bottom_length) > profile.line_length)
-        score += 100 * units[i].startswith(SRT_PUNCTUATION)
-        if units[i - 1].endswith(SRT_PUNCTUATION):
+        score += 100 * following.startswith(SRT_PUNCTUATION)
+        score += 60 * _srt_name(previous, following)
+        if previous.endswith(SRT_PUNCTUATION) or previous.isspace():
             score -= 30
-        elif english and units[i].lower().strip("".join(SRT_PUNCTUATION)) in SRT_EN_BREAK_BEFORE:
+        elif english and following.lower().strip("".join(SRT_PUNCTUATION)) in SRT_EN_BREAK_BEFORE:
             score -= 15
-        if english and units[i - 1].lower() in SRT_EN_NO_BREAK_AFTER:
+        if english and previous.lower() in SRT_EN_NO_BREAK_AFTER:
             score += 60
-        elif english and units[i - 1].lower() in SRT_EN_BREAK_BEFORE:
+        elif english and previous.lower() in SRT_EN_BREAK_BEFORE:
             score += 15
         if profile.spaced and i <= 2:
             score += 20  # avoid a top line of just one or two words
@@ -144,12 +213,15 @@ def _srt_sentence_end(previous, following, profile):
 
 def _srt_break(words, i, profile, spaced):
     """Scores how natural a cue break before words[i] is, or None inside a word."""
-    if spaced and not words[i]["word"].startswith(" "):
+    token = words[i]["word"]
+    if (spaced and not token.startswith(" ")) or unicodedata.category(token[:1] or " ") == "Mn":
         return None  # Whisper starts words with a space; other tokens continue a word
-    previous, following = words[i - 1]["word"].strip().lower(), words[i]["word"].strip().lower()
+    previous, following = words[i - 1]["word"].strip(), token.strip()
     score = 30 * (previous.endswith(SRT_PUNCTUATION) and not previous.endswith(SRT_SENTENCE_END))
     score += 40 * min(words[i]["start"] - words[i - 1]["end"], 1.0)
+    score -= 60 * _srt_name(previous, following)
     if profile.language == "en":
+        previous, following = previous.lower(), following.lower()
         score += 15 * (following in SRT_EN_BREAK_BEFORE) - 15 * (previous in SRT_EN_BREAK_BEFORE)
         score -= 60 * (previous in SRT_EN_NO_BREAK_AFTER)
     return score
@@ -185,8 +257,95 @@ def _srt_split(words, profile):
     return cues
 
 
+def _srt_words(segment, profile):
+    """Returns the timed words of a segment, spreading its time over its words if it has none."""
+    words = [w for w in segment.get("words") or [] if w.get("start") is not None]
+    text = str(segment.get("text") or "").strip()
+    if words or not text:
+        return words
+    tokens = (
+        [f" {token}" for token in text.split()] if profile.spaced else _srt_units(text, profile)
+    )
+    total, start = sum(len(token) for token in tokens), segment["start"]
+    for token in tokens:
+        end = start + (segment["end"] - segment["start"]) * len(token) / total
+        words.append({"start": start, "end": end, "word": token})
+        start = end
+    return words
+
+
+def _srt_combine(previous, cue, profile):
+    """Returns two cues as one, on dashed lines for two speakers, or None if they do not fit."""
+    if (
+        cue[1] - previous[0] > SRT_MAX_DURATION
+        or cue[0] - previous[1] > SRT_PAUSE_ALWAYS  # keep cues in sync with the speech
+        or "\n" in previous[2] + cue[2]
+    ):
+        return None
+    if previous[3] == cue[3]:
+        text = f"{previous[2]}{' ' if profile.spaced else ''}{cue[2]}"
+        return [previous[0], cue[1], text, cue[3]] if _srt_fits(text, profile) else None
+    lines = [f"{profile.dashes[0]}{previous[2]}", f"{profile.dashes[1]}{cue[2]}"]
+    if all(srt_length(line, profile) <= profile.line_length for line in lines):
+        return [previous[0], cue[1], "\n".join(lines), (previous[3], cue[3])]
+    return None
+
+
+def _srt_room(cue, next_start, profile):
+    """Seconds a cue can stay up before the next cue or the maximum duration."""
+    end = cue[0] + SRT_MAX_DURATION
+    if next_start is not None:
+        end = min(end, next_start - profile.min_gap)
+    return end - cue[0]
+
+
+def _srt_speed(cue, next_start, profile):
+    """Characters per second a cue needs when it stays up as long as it can."""
+    return srt_length(cue[2], profile) / max(_srt_room(cue, next_start, profile), 0.001)
+
+
+def _srt_merge(cues, profile):
+    """Merges cues too short or too fast to read into a neighbour, where the result still fits."""
+
+    def next_start(cues, i):
+        return cues[i + 1][0] if i + 1 < len(cues) else None
+
+    def too_short(cues, i):
+        return _srt_room(cues[i], next_start(cues, i), profile) < profile.min_duration
+
+    merged = []
+    for cue in cues:
+        combined = (
+            merged and too_short([merged[-1], cue], 0) and _srt_combine(merged[-1], cue, profile)
+        )
+        if combined:
+            merged[-1] = combined
+        else:
+            merged.append(cue)
+    for i in range(len(merged) - 1, 0, -1):
+        # A short cue that cannot take in the next one joins the previous one instead.
+        combined = too_short(merged, i) and _srt_combine(merged[i - 1], merged[i], profile)
+        if combined:
+            merged[i - 1 : i + 1] = [combined]
+    i = 0
+    while i + 1 < len(merged):
+        # Merge neighbours that are too fast to read when the merged cue reads slower.
+        speed = max(_srt_speed(merged[j], next_start(merged, j), profile) for j in (i, i + 1))
+        combined = speed > profile.chars_per_second and _srt_combine(
+            merged[i], merged[i + 1], profile
+        )
+        if combined and _srt_speed(combined, next_start(merged, i + 1), profile) < speed:
+            merged[i : i + 2] = [combined]
+        else:
+            i += 1
+    return merged
+
+
 def srt_cues(segments, language=None):
-    """Turns transcript segments into Netflix-style cues of [start, end, text, speaker]."""
+    """Turns transcript segments into Netflix-style cues of [start, end, text, speaker].
+
+    The text of a cue shared by two speakers holds their two dashed lines.
+    """
     profile = srt_profile(language)
     cues, sentence, speaker = [], [], None
 
@@ -197,60 +356,27 @@ def srt_cues(segments, language=None):
         sentence.clear()
 
     for segment in segments:
-        words = [w for w in segment.get("words") or [] if w.get("start") is not None]
-        if not words or segment.get("speaker") != speaker:
-            flush()
-        speaker = segment.get("speaker")
-        if not words:
-            text = str(segment["text"]).strip()
-            cues.append([segment["start"], segment["end"], text, speaker])
-            continue
-        for word in words:
-            # Segments ending mid-sentence carry over, so cues follow sentences.
-            if sentence and _srt_sentence_end(sentence[-1], word, profile):
+        for word in _srt_words(segment, profile):
+            word_speaker = word.get("speaker", segment.get("speaker"))
+            # A new speaker or sentence starts a new cue; segments ending mid-sentence carry over.
+            if sentence and (
+                word_speaker != speaker or _srt_sentence_end(sentence[-1], word, profile)
+            ):
                 flush()
+            speaker = word_speaker
             sentence.append(word)
     flush()
 
-    def merge(previous, cue):
-        """Merges cue into previous if both are one speaker's and the result still fits."""
-        text = f"{previous[2]}{' ' if profile.spaced else ''}{cue[2]}"
-        if (
-            previous[3] == cue[3]
-            and cue[1] - previous[0] <= SRT_MAX_DURATION
-            and _srt_fits(text, profile)
-        ):
-            previous[1:3] = [cue[1], text]
-            return True
-        return False
-
-    def too_short(cues, i):
-        """Whether cue i cannot stay up for the minimum duration before the next one starts."""
-        return (
-            i + 1 < len(cues)
-            and cues[i + 1][0] - profile.min_gap - cues[i][0] < profile.min_duration
-        )
-
-    merged = []
-    for cue in cues:
-        if not (merged and too_short([merged[-1], cue], 0) and merge(merged[-1], cue)):
-            merged.append(cue)
-    for i in range(len(merged) - 1, 0, -1):
-        # A short cue that cannot take in the next one joins the previous one instead.
-        if too_short(merged, i) and merge(merged[i - 1], merged[i]):
-            del merged[i]
-
-    for i, cue in enumerate(merged):
-        # Hold each cue long enough to read, then close small gaps to the next one.
+    cues = _srt_merge(cues, profile)
+    for i, cue in enumerate(cues):
+        # Hold each cue long enough to read and a little past the speech, then close small gaps.
         reading_time = srt_length(cue[2], profile) / profile.chars_per_second
-        end = max(cue[1], cue[0] + max(profile.min_duration, reading_time))
+        end = max(cue[1] + SRT_LINGER, cue[0] + max(profile.min_duration, reading_time))
         end = min(end, cue[0] + SRT_MAX_DURATION)
-        if i + 1 < len(merged) and merged[i + 1][0] - end < max(
-            profile.bridge_gap, profile.min_gap
-        ):
-            end = min(merged[i + 1][0] - profile.min_gap, cue[0] + SRT_MAX_DURATION)
+        if i + 1 < len(cues) and cues[i + 1][0] - end < profile.bridge_gap:
+            end = min(cues[i + 1][0] - profile.min_gap, cue[0] + SRT_MAX_DURATION)
         cue[1] = max(end, cue[0])
-    return merged
+    return cues
 
 
 def _srt_time(seconds):
@@ -260,12 +386,79 @@ def _srt_time(seconds):
     )
 
 
+def _srt_clean(text, profile):
+    """Applies the language's punctuation rules and removes extra white space."""
+    text = text.replace("...", "…")
+    if profile.no_punctuation:
+        text = re.sub(profile.no_punctuation, " ", text)
+    return " ".join(text.split())
+
+
 def srt_document(segments, language=None):
     """Returns the SRT text for transcript segments, following the Netflix subtitle guidelines."""
     profile = srt_profile(language)
     blocks = []
     for index, (start, end, text, _) in enumerate(srt_cues(segments, language), 1):
-        text = " ".join(text.replace("...", "…").split())
-        lines = "\n".join(srt_wrap(text, profile))
+        if "\n" in text:
+            lines = [_srt_clean(line, profile) for line in text.split("\n")]
+        else:
+            lines = srt_wrap(_srt_clean(text, profile), profile)
+        lines = "\n".join(lines)
         blocks.append(f"{index}\n{_srt_time(start)} --> {_srt_time(end)}\n{lines}\n\n")
     return "".join(blocks)
+
+
+def _srt_seconds(timestamp):
+    hours, minutes, rest = timestamp.split(":")
+    seconds, milliseconds = rest.split(",")
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(milliseconds) / 1000
+
+
+def parse_srt(document):
+    """Returns the (start, end, lines) of every cue in an SRT document."""
+    cues = []
+    for block in document.strip().split("\n\n") if document.strip() else []:
+        lines = block.split("\n")
+        start, end = lines[1].split(" --> ")
+        cues.append((_srt_seconds(start), _srt_seconds(end), lines[2:]))
+    return cues
+
+
+def netflix_issues(document, language=None):
+    """Returns (rule, cue number) for every Netflix rule an SRT document breaks.
+
+    Ports the checks of Subtitle Edit's Netflix quality check that apply to audio-only output.
+    Shot changes need the video, and italics or number spelling would change the transcript.
+    """
+    profile = srt_profile(language)
+    cues, issues = parse_srt(document), []
+    for index, (start, end, lines) in enumerate(cues):
+        number, duration, text = index + 1, end - start, "".join(lines)
+        if any(srt_length(line, profile) > profile.line_length for line in lines):
+            issues.append(("max line length", number))
+        if len(lines) > 2:
+            issues.append(("two lines maximum", number))
+        dialog = len(lines) == 2 and lines[1].startswith("-")
+        if (
+            len(lines) == 2
+            and not dialog
+            and srt_length(" ".join(lines), profile) <= profile.line_length
+        ):
+            issues.append(("text can fit on one line", number))
+        if duration < profile.min_duration - 0.001:
+            issues.append(("minimum duration", number))
+        if duration > SRT_MAX_DURATION + 0.001:
+            issues.append(("maximum duration", number))
+        if duration > 0 and srt_length(text, profile) / duration > profile.chars_per_second + 0.01:
+            issues.append(("maximum characters per second", number))
+        if any(line != line.strip() or "  " in line for line in lines):
+            issues.append(("white space", number))
+        if "..." in text:
+            issues.append(("ellipses not three dots", number))
+        if index + 1 < len(cues):
+            gap = cues[index + 1][0] - end
+            if gap < profile.min_gap - 0.001:
+                issues.append(("two frames gap", number))
+            elif profile.min_gap + 0.001 < gap < profile.bridge_gap - 0.001:
+                issues.append(("bridge gaps", number))
+    return issues

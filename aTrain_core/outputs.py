@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import time
+from collections import Counter
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 
@@ -15,7 +16,7 @@ from aTrain_core.globals import (
     TIMESTAMP_FORMAT,
     TRANSCRIPT_DIR,
 )
-from aTrain_core.output_formats.netflix_subtitles import srt_document
+from aTrain_core.output_formats.netflix_subtitles import netflix_issues, srt_document
 from aTrain_core.settings import Settings
 
 
@@ -100,9 +101,14 @@ def create_txt_file(result, file_id, speaker_detection, timestamps, maxqda, brac
 def create_srt_file(result, file_id, language=None):
     """Creates a SRT file for the transcription result, following the Netflix subtitle guidelines."""
 
+    document = srt_document(result["segments"], language)
     file_path = os.path.join(TRANSCRIPT_DIR, file_id, "transcription.srt")
     with open(file_path, "w", encoding="utf-8") as srt_file:
-        srt_file.write(srt_document(result["segments"], language))
+        srt_file.write(document)
+    issues = Counter(rule for rule, _ in netflix_issues(document, language))
+    if issues:
+        summary = ", ".join(f"{rule}: {count}" for rule, count in issues.items())
+        write_logfile(f"SRT cues outside the Netflix guidelines ({summary})", file_id)
 
 
 def transform_speakers_results(diarization_segments):
