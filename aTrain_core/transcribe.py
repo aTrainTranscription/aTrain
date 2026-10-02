@@ -90,6 +90,7 @@ def transcribe(settings: Settings):
     elif settings.device == Device.CPU:
         write_logfile("Transcribing in same process", settings.file_id)
         transcript = run_transcription(settings, model_path, audio_array)
+    language = transcript.pop("language", settings.language) if transcript else settings.language
     if settings.speaker_detection and transcript:
         transcript = run_speaker_detection(settings, audio_duration, audio_array, transcript)
     subtitles = transcript
@@ -100,7 +101,9 @@ def transcribe(settings: Settings):
         subtitles = {
             "segments": group_word_segments(segments, join_raw, max_duration=SRT_MAX_DURATION)
         }
-    create_output_files(transcript, settings.speaker_detection, settings.file_id, subtitles)
+    create_output_files(
+        transcript, settings.speaker_detection, settings.file_id, subtitles, language
+    )
     write_logfile("Created output files", settings.file_id)
     add_processing_time_to_metadata(settings.file_id)
     write_logfile("Processing time added to metadata", settings.file_id)
@@ -182,7 +185,7 @@ def run_transcription(
                     settings.file_id,
                 )
                 words.append({"word": segment.text, "start": segment.start, "end": segment.end})
-        transcript = {"segments": words_to_segments(words)}
+        transcript = {"segments": words_to_segments(words), "language": info.language}
         write_logfile("Transcription successful", settings.file_id)
         if settings.device == Device.CPU:
             return transcript

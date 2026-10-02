@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import time
+from collections import Counter
 from datetime import datetime
 
 import numpy as np
@@ -15,6 +16,7 @@ from aTrain_core.globals import (
     TIMESTAMP_FORMAT,
     TRANSCRIPT_DIR,
 )
+from aTrain_core.output_formats.netflix_subtitles import netflix_issues, srt_document
 from aTrain_core.settings import Settings
 
 
@@ -40,7 +42,7 @@ def create_file_id(file_path, timestamp):
     return file_id
 
 
-def create_output_files(result, speaker_detection, file_id, subtitles=None):
+def create_output_files(result, speaker_detection, file_id, subtitles=None, language=None):
     """Creates output files based on the transcription result."""
     create_json_file(result, file_id)
     create_txt_file(
@@ -53,7 +55,7 @@ def create_output_files(result, speaker_detection, file_id, subtitles=None):
         result, file_id, speaker_detection, maxqda=False, timestamps=True, brackets=False
     )  # NEW: NVivo output format
     create_txt_file(result, file_id, speaker_detection, maxqda=True, timestamps=True, brackets=True)
-    create_srt_file(subtitles or result, file_id)
+    create_srt_file(subtitles or result, file_id, language)
 
 
 def create_json_file(result, file_id):
@@ -96,26 +98,17 @@ def create_txt_file(result, file_id, speaker_detection, timestamps, maxqda, brac
             file.write(text + (" " if maxqda else "\n"))
 
 
-def create_srt_file(result, file_id):
-    """Creates a SRT file for the transcription result."""
+def create_srt_file(result, file_id, language=None):
+    """Creates a SRT file for the transcription result, following the Netflix subtitle guidelines."""
 
-    segments = result["segments"]
+    document = srt_document(result["segments"], language)
     file_path = os.path.join(TRANSCRIPT_DIR, file_id, "transcription.srt")
     with open(file_path, "w", encoding="utf-8") as srt_file:
-        for index, segment in enumerate(segments, 1):
-            srt_file.write(f"{index}\n")
-            start_time = segment["start"]
-            end_time = segment["end"]
-            start_time_format = (
-                time.strftime("%H:%M:%S", time.gmtime(start_time))
-                + f",{round((start_time - int(start_time)) * 1000):03}"
-            )
-            end_time_format = (
-                time.strftime("%H:%M:%S", time.gmtime(end_time))
-                + f",{round((end_time - int(end_time)) * 1000):03}"
-            )
-            srt_file.write(f"{start_time_format} --> {end_time_format}\n")
-            srt_file.write(f"{str(segment['text']).lstrip()}\n\n")
+        srt_file.write(document)
+    issues = Counter(rule for rule, _ in netflix_issues(document, language))
+    if issues:
+        summary = ", ".join(f"{rule}: {count}" for rule, count in issues.items())
+        write_logfile(f"SRT cues outside the Netflix guidelines ({summary})", file_id)
 
 
 def transform_speakers_results(diarization_segments):
