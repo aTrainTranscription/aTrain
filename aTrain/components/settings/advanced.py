@@ -5,19 +5,27 @@ from aTrain_core.settings import ComputeType
 from nicegui import ElementFilter, app, ui
 
 
-def advanced_settings(open: bool):
-    with ui.dialog(value=open) as dialog, ui.card() as card:
-        dialog.props("position=right full-height").classes("[&>*]:p-0")
-        card.props("square").classes("w-72 xl:w-96 p-6 gap-6")
-        ui.label("Advanced Settings").classes("text-lg text-dark font-bold")
+def advanced_settings_body():
+    with ui.column().classes("w-full max-w-xl gap-6"):
         input_gpu()
         input_compute_type()
         input_cpu_threads()
         input_temperature()
         input_initial_prompt()
-        btn = ui.button("Ok", color="dark").props("unelevated no-caps")
-        btn.on_click(dialog.close)
-        dialog.on("hide", dialog.delete)
+
+
+def seed_defaults():
+    """Write the defaults the advanced settings would write, so a job can be added without
+    opening the Advanced Settings page first."""
+    from torch import cuda  # Lazy import for improved startup speed
+
+    state = app.storage.general
+    state["GPU"] = cuda.is_available() and state.get("GPU", True)
+    state.setdefault("cpu_threads", DEFAULT_CPU_THREADS)
+    if not state["GPU"] or not state.get("compute_type"):
+        state["compute_type"] = ComputeType.INT8.value
+    # Fix wrong default setting from version 1.4.0 (see input_temperature)
+    state["temperature"] = None
 
 
 def input_gpu():

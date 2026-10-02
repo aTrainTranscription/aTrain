@@ -42,6 +42,7 @@ dependencies = [
   "typer==0.27.2",
   "platformdirs==4.11.12",
   "jiwer==4.0.0",
+  "filelock==3.29.4",
 ]
 
 [project.optional-dependencies]
@@ -105,6 +106,9 @@ exclude_dirs = [".venv", "build", "dist", "aTrain.egg-info", "aTrain_core.egg-in
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# tests import shared helpers as `tests.unit...` / `tests.fakes...`; plain `pytest`
+# (as in CI) doesn't put the repo root on sys.path by itself
+pythonpath = ["."]
 # NiceGUI's `user` fixture (UI E2E) is async; auto mode lets pytest-asyncio
 # handle async tests/fixtures without per-item markers.
 asyncio_mode = "auto"

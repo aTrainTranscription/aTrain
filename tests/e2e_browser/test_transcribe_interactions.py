@@ -2,7 +2,7 @@
 
 Sister to `test_pages_render.py` (pure render/presence). These drive
 actual clicks and assert reactive JS-side state - visibility toggles
-and dialog open/close - that the in-process NiceGUI User fixture
+and page navigation - that the in-process NiceGUI User fixture
 can't observe (it inspects Python-side element state, not the DOM
 Quasar produces).
 """
@@ -28,13 +28,11 @@ def test_speaker_detection_toggle_reveals_speaker_count(atrain_server: str, page
     expect(speaker_count).to_be_hidden()
 
 
-def test_advanced_settings_button_opens_dialog(atrain_server: str, page: Page) -> None:
-    """The Advanced Settings dialog is embedded closed on the transcribe
-    page and re-created on button click. `GPU acceleration` lives only
-    inside the dialog, so its visibility is a clean proxy for open-state."""
+def test_sidebar_opens_advanced_settings(atrain_server: str, page: Page) -> None:
+    """Advanced Settings is a sidebar page, no longer a dialog on the
+    transcribe page. `GPU acceleration` only renders on that page."""
     page.goto(atrain_server)
-    gpu_label = page.get_by_text("GPU acceleration").last
-    expect(gpu_label).to_be_hidden()
+    expect(page.get_by_text("GPU acceleration")).to_have_count(0)
 
-    page.get_by_role("button", name="Advanced Settings").click()
-    expect(gpu_label).to_be_visible()
+    page.get_by_role("link", name="Advanced Settings").click()
+    expect(page.get_by_text("GPU acceleration")).to_be_visible()

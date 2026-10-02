@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from aTrain_core import engine
+from aTrain_core import engine, runner
 from aTrain_core.backends import crisper_transformers
 from aTrain_core.backends.common import SRT_MAX_DURATION, group_word_segments
 from aTrain_core.outputs import finalize
@@ -81,6 +81,18 @@ def test_faster_whisper_transcriber_keeps_segments_without_word_timestamps():
     assert calls[0]["language"] is None and calls[0]["condition_on_previous_text"] is True
     assert progress == {"task": "Transcribe", "current": 3.0, "total": 3.0}
     assert "Segment without word timestamps kept as one word: 1.5s" in log
+
+
+def test_sent_transcription_progress_never_exceeds_the_total():
+    sent = []
+    channel = SimpleNamespace(send=sent.append)
+    progress = runner.EventProgress(channel, "a", interval=0)  # send every change
+    segments = [SimpleNamespace(end=30.7), SimpleNamespace(end=61.4)]
+
+    engine.transcription_with_progress_bar(segments, SimpleNamespace(duration=197.5), progress)
+
+    assert sent and all(e.current <= e.total for e in sent)
+    assert (sent[-1].current, sent[-1].total) == (61.4, 197.5)
 
 
 def test_crisper_transcribe_with_model_logs_ignored_settings():

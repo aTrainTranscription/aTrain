@@ -15,7 +15,7 @@ persistent modules (e.g. `aTrain.utils.models`) and be applied before the
 in the test signature.
 """
 
-from aTrain.pages import about, archive, faq, models, transcribe  # noqa: F401
+from aTrain.pages import about, advanced, archive, faq, models, queue_tab, transcribe  # noqa: F401
 from nicegui import ui
 
 # Rationale: test-only storage secret for the simulated app, not a credential.

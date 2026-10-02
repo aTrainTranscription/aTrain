@@ -1,8 +1,9 @@
 """Full UI E2E via NiceGUI's in-process User fixture (no browser).
 
 Renders the real transcription page and drives a transcription through the
-app's real wiring (start_transcription -> run.cpu_bound -> finished dialog),
-with the tiny model on CPU. Complements the lighter boot-serve smoke.
+app's real wiring (upload handler -> queue -> phase children -> "Done" on the
+Queue tab), with the tiny model on CPU. Complements the lighter
+boot-serve smoke.
 """
 
 from pathlib import Path
@@ -10,7 +11,7 @@ from typing import cast
 
 import aTrain_core.transcribe  # noqa: F401  pre-import so the splash import is instant
 from aTrain.utils import transcription
-from aTrain.utils.transcription import start_transcription, start_transcription_from_path
+from aTrain.utils.transcription import start_paths, start_uploads
 from nicegui import app, events, ui
 from nicegui.testing import User
 
@@ -19,7 +20,7 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "sample_short.mp3"
 
 async def test_main_page_renders(user: User):
     await user.open("/")
-    await user.should_see("Start", retries=100)
+    await user.should_see(kind=ui.button, content="Start", retries=100)
 
 
 CHEAP_SETTINGS = {
@@ -41,23 +42,26 @@ async def test_transcribe_through_ui(user: User):
     # The UI settings components write into app.storage.general; set them
     # directly to force the cheap path (tiny model, CPU) over the UI default.
     app.storage.general.update(CHEAP_SETTINGS)
-    # start_transcription is exactly what the upload handler calls. Build a
-    # *real* UploadEventArguments rather than a stand-in: a hand-rolled double
+    # start_uploads is exactly what the upload handler calls. Build a *real*
+    # MultiUploadEventArguments rather than a stand-in: a hand-rolled double
     # freezes whatever attribute names NiceGUI happened to use when it was
     # written, so an upload-API change (2.x `.name`/`.content` -> 3.x `.file`)
     # slips through green. sender/client are unused by the handler.
-    upload_event = events.UploadEventArguments(
+    upload_event = events.MultiUploadEventArguments(
         sender=cast(object, None),  # type: ignore[arg-type]
         client=cast(object, None),  # type: ignore[arg-type]
-        file=ui.upload.SmallFileUpload(
-            name="sample_short.mp3",
-            content_type="audio/mpeg",
-            _data=FIXTURE.read_bytes(),
-        ),
+        files=[
+            ui.upload.SmallFileUpload(
+                name="sample_short.mp3",
+                content_type="audio/mpeg",
+                _data=FIXTURE.read_bytes(),
+            )
+        ],
     )
     with user:
-        await start_transcription(upload_event)
-    await user.should_see("transcribed your file", retries=600)
+        await start_uploads(upload_event)
+    await user.open("/queue")
+    await user.should_see("Done", retries=600)
 
 
 async def test_large_upload_is_staged_from_disk(tmp_path):
@@ -93,17 +97,17 @@ async def test_picked_path_reaches_the_pipeline_unchanged(monkeypatch):
     is unexercised on CI, and a mismatched payload breaks whichever platform
     nobody happened to run.
 
-    Only the adapter is checked: everything downstream of `run_pipeline`
+    Only the adapter is checked: everything downstream of `start_payloads`
     is the same code the upload test already drives end to end, and a second
     real transcription would double the `e2e (app)` job for no added coverage.
     """
     captured: list[transcription.UploadPayload] = []
 
-    async def capture(payload: transcription.UploadPayload) -> None:
-        captured.append(payload)
+    async def capture(payloads: list[transcription.UploadPayload], export_dir=None) -> None:
+        captured.extend(payloads)
 
-    monkeypatch.setattr(transcription, "run_pipeline", capture)
-    await start_transcription_from_path(FIXTURE, FIXTURE.name)
+    monkeypatch.setattr(transcription, "start_payloads", capture)
+    await start_paths([FIXTURE])
 
     (payload,) = captured
     assert payload.name == FIXTURE.name
