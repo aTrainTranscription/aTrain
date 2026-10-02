@@ -26,12 +26,7 @@ FIXTURES = Path(__file__).parent.parent / "fixtures" / "srt"
 MOVIES = sorted(path.stem for path in FIXTURES.glob("*.json"))
 # Cues per movie clip that stay faster than the reading speed: the speech itself is faster,
 # and meeting the limit would mean rewording the transcript. Lower these when it improves.
-TOO_FAST = {
-    "detour": 6,
-    "his_girl_friday": 21,
-    "little_shop_of_horrors": 5,
-    "night_of_the_living_dead": 6,
-}
+TOO_FAST = {"detour": 6, "his_girl_friday": 21}
 
 
 def _render(segments, language):
