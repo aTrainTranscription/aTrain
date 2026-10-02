@@ -3,7 +3,7 @@
 import re
 import time
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 # Subtitle rules from the Netflix Timed Text Style Guides, linked to their passages below. The
 # per-language tables also follow the Netflix quality check of Subtitle Edit
@@ -101,6 +101,7 @@ class SrtProfile:
     spaced: bool
     dashes: tuple
     no_punctuation: str | None
+    word_spaces: bool = True  # Whisper starts words with a space; other tokens continue a word
 
 
 def srt_profile(language):
@@ -151,8 +152,7 @@ def _srt_units(text, profile):
 def _srt_join(tokens, profile):
     """Joins word tokens into text."""
     tokens = [str(token) for token in tokens]
-    if not profile.spaced or any(token.startswith(" ") for token in tokens):
-        # Whisper marks word starts with a leading space; other tokens continue the word.
+    if not profile.spaced or profile.word_spaces:
         return "".join(tokens).strip()
     text = ""
     for token in tokens:
@@ -216,14 +216,10 @@ def _srt_fits(text, profile):
 def _srt_sentence_end(previous, following, profile):
     """Whether a sentence ends between two words, by punctuation or by a long enough pause."""
     text = previous["word"].strip()
-    if text.endswith(SRT_SENTENCE_END):
-        return True
-    if text.endswith(SRT_PUNCTUATION):
-        return False
     pause = following["start"] - previous["end"]
-    if pause > SRT_PAUSE_ALWAYS:
+    if text.endswith(SRT_SENTENCE_END) or pause > SRT_PAUSE_ALWAYS:
         return True
-    if pause <= SRT_PAUSE_SENTENCE:
+    if text.endswith(SRT_PUNCTUATION) or pause <= SRT_PAUSE_SENTENCE:
         return False
     return not (
         profile.language == "en"
@@ -252,7 +248,7 @@ def _srt_break(words, i, profile, spaced):
 
 def _srt_split(words, profile):
     """Splits one sentence into the fewest cues that fit, breaking at the most natural places."""
-    spaced = profile.spaced and any(word["word"].startswith(" ") for word in words)
+    spaced = profile.spaced and profile.word_spaces
     breaks = [None] + [_srt_break(words, i, profile, spaced) for i in range(1, len(words))] + [0]
     best = [(0.0, 0)] + [None] * len(words)  # (cost, start of the last cue) per end index
     for end in range(1, len(words) + 1):
@@ -370,6 +366,10 @@ def srt_cues(segments, language=None):
     The text of a cue shared by two speakers holds their two dashed lines.
     """
     profile = srt_profile(language)
+    # Whisper words start with a space and tokens without one continue a word; other backends
+    # give whole words without spaces. Decided once, as a cue may hold only continuation tokens.
+    tokens = [str(w.get("word", "")) for s in segments for w in s.get("words") or []]
+    profile = replace(profile, word_spaces=not tokens or any(t.startswith(" ") for t in tokens))
     cues, sentence, speaker = [], [], None
 
     def flush():
@@ -421,13 +421,15 @@ def srt_document(segments, language=None):
     """Returns the SRT text for transcript segments, following the Netflix subtitle guidelines."""
     profile = srt_profile(language)
     blocks = []
-    for index, (start, end, text, _) in enumerate(srt_cues(segments, language), 1):
+    for start, end, text, _ in srt_cues(segments, language):
         if "\n" in text:
             lines = [_srt_clean(line, profile) for line in text.split("\n")]
         else:
             lines = srt_wrap(_srt_clean(text, profile), profile)
-        lines = "\n".join(lines)
-        blocks.append(f"{index}\n{_srt_time(start)} --> {_srt_time(end)}\n{lines}\n\n")
+        lines = "\n".join(line for line in lines if line)
+        if lines:  # punctuation-only cues are empty once the punctuation is removed
+            index = len(blocks) + 1
+            blocks.append(f"{index}\n{_srt_time(start)} --> {_srt_time(end)}\n{lines}\n\n")
     return "".join(blocks)
 
 

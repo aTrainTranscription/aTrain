@@ -268,3 +268,28 @@ def test_word_pieces_spanning_long_silence_do_not_break_splitting():
     words = _words((0.0, 0.5, " in"), (0.5, 1.0, " those"), (1.0, 5.0, " da"), (5.0, 9.0, "ys"))
     cues = srt_cues([_segment(words)], "en")
     assert " ".join(cue[2] for cue in cues) == "in those days"
+
+
+def test_punctuation_only_cue_is_left_out():
+    segments = [_segment(_words((0.0, 0.5, "。"))), _segment(_words((3.0, 4.0, "你好。")))]
+    document = srt_document(segments, "zh")
+    assert [cue[2] for cue in parse_srt(document)] == [["你好"]]
+    assert document.startswith("1\n")
+    assert netflix_issues(document, "zh") == []
+
+
+@pytest.mark.parametrize(
+    ("pieces", "expected"), [(("O", "'Reilly."), "O'Reilly."), (("X", "-ray."), "X-ray.")]
+)
+def test_word_pieces_without_a_leading_space_stay_joined(pieces, expected):
+    other = _segment(_words((0.0, 0.5, " Hello.")))
+    word = _segment(_words((3.0, 3.3, pieces[0]), (3.3, 3.8, pieces[1])))
+    assert srt_cues([other, word], "en")[1][2] == expected
+
+
+def test_long_pause_after_a_comma_starts_a_new_cue():
+    wait = _segment(_words((0.0, 0.5, " Wait,")))
+    okay = _segment(_words((6.0, 6.5, " okay.")))
+    cues = srt_cues([wait, okay], "en")
+    assert [cue[2] for cue in cues] == ["Wait,", "okay."]
+    assert cues[0][1] < 6.0
