@@ -1,7 +1,8 @@
-"""Tests for the Netflix-style SRT output.
+"""Unit tests for aTrain_core.output_formats.netflix_subtitles, the Netflix-style SRT output.
 
 `netflix_issues` ports the checks of Subtitle Edit's Netflix quality check
-(MIT License, Copyright (c) Nikolaj Olsson) that apply to audio-only output.
+(https://github.com/SubtitleEdit/subtitleedit, MIT License, Copyright (c)
+Nikolaj Olsson) that apply to audio-only output.
 Shot changes need the video, and italics or number spelling would change the
 transcript, so those are left out. The movie fixtures are Whisper output for
 3-minute clips of public domain films; see the "source" key of each file.
@@ -10,9 +11,15 @@ transcript, so those are left out. The movie fixtures are Whisper output for
 import json
 from pathlib import Path
 
-import aTrain_core.outputs as outputs
 import pytest
-from aTrain_core.outputs import create_srt_file, srt_cues, srt_length, srt_profile, srt_wrap
+from aTrain_core.output_formats.netflix_subtitles import (
+    SRT_MAX_DURATION,
+    srt_cues,
+    srt_document,
+    srt_length,
+    srt_profile,
+    srt_wrap,
+)
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "srt"
 MOVIES = sorted(path.stem for path in FIXTURES.glob("*.json"))
@@ -47,7 +54,7 @@ def netflix_issues(cues, language):
             issues.append(("text can fit on one line", number))
         if duration < profile.min_duration - 0.001:
             issues.append(("minimum duration", number))
-        if duration > outputs.SRT_MAX_DURATION + 0.001:
+        if duration > SRT_MAX_DURATION + 0.001:
             issues.append(("maximum duration", number))
         if duration > 0 and srt_length(text, profile) / duration > profile.chars_per_second + 0.01:
             issues.append(("maximum characters per second", number))
@@ -64,11 +71,8 @@ def netflix_issues(cues, language):
     return issues
 
 
-def _write_srt(monkeypatch, tmp_path, segments, language):
-    monkeypatch.setattr(outputs, "TRANSCRIPT_DIR", str(tmp_path))
-    (tmp_path / "clip").mkdir()
-    create_srt_file({"segments": segments}, "clip", language)
-    return parse_srt((tmp_path / "clip" / "transcription.srt").read_text(encoding="utf-8"))
+def _render(segments, language):
+    return parse_srt(srt_document(segments, language))
 
 
 def _words(*timed_words):
@@ -87,9 +91,9 @@ def _segment(words, **extra):
 
 
 @pytest.mark.parametrize("movie", MOVIES)
-def test_movie_clips_follow_netflix_rules(movie, monkeypatch, tmp_path):
+def test_movie_clips_follow_netflix_rules(movie):
     fixture = json.loads((FIXTURES / f"{movie}.json").read_text(encoding="utf-8"))
-    cues = _write_srt(monkeypatch, tmp_path, fixture["segments"], fixture["language"])
+    cues = _render(fixture["segments"], fixture["language"])
     # Fast speech cannot always meet the reading speed without rewording the transcript.
     issues = [
         i
@@ -206,9 +210,9 @@ def test_chinese_is_joined_without_spaces_and_wrapped_by_characters():
     assert " " not in "".join(cue[2] for cue in cues)
 
 
-def test_create_srt_file_writes_netflix_cues(monkeypatch, tmp_path):
+def test_srt_document_writes_netflix_cues():
     words = _words((0.0, 0.3, " Wait..."), (0.35, 0.6, " what?"))
-    cues = _write_srt(monkeypatch, tmp_path, [_segment(words)], "en")
+    cues = _render([_segment(words)], "en")
     assert cues == [(0.0, pytest.approx(5 / 6, abs=0.001), ["Wait… what?"])]
 
 
