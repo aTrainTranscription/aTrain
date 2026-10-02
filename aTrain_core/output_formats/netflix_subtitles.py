@@ -5,45 +5,65 @@ import time
 import unicodedata
 from dataclasses import dataclass
 
-# Subtitle rules from the Netflix Timed Text Style Guides. The per-language limits follow the
-# Netflix quality check of Subtitle Edit (https://github.com/SubtitleEdit/subtitleedit,
-# MIT License, Copyright (c) Nikolaj Olsson) and the Netflix language guides; languages
-# without an entry use the defaults.
+# Subtitle rules from the Netflix Timed Text Style Guides, linked to their passages below. The
+# per-language tables also follow the Netflix quality check of Subtitle Edit
+# (https://github.com/SubtitleEdit/subtitleedit, MIT License, Copyright (c) Nikolaj Olsson);
+# languages without an entry use the defaults.
+
+# Characters per line, "Character Limitation" in the language guides:
+# English I.2 https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977#h_01J1EZBGW3CPMYRS1SKDKXQQE6
+# German I.3 https://partnerhelp.netflixstudios.com/hc/en-us/articles/217351587#h_01J9KXGXXDQBYEMZXY1W8VWEEE
+# Japanese I.5 https://partnerhelp.netflixstudios.com/hc/en-us/articles/215767517 (no anchors)
+# Korean I.2 https://partnerhelp.netflixstudios.com/hc/en-us/articles/216001127#h_01HTQ59SEM4V6GSPWFTA3Q3RC8
+# Chinese (Simplified) 1 https://partnerhelp.netflixstudios.com/hc/en-us/articles/215986007#h_01HE8BHXBDQMNX3F1H90C92P74
+# Thai I.3 https://partnerhelp.netflixstudios.com/hc/en-us/articles/220448308#h_01FWRFY62RZPMR1030MEWSMR51
 SRT_LINE_LENGTH = {"ja": 13, "ko": 16, "th": 35, "zh": 16}
-SRT_CHARS_PER_SECOND = {"ar": 20, "en": 20, "hi": 22, "ja": 4, "ko": 12, "zh": 9}
 SRT_DEFAULT_LINE_LENGTH = 42
+# Characters per second for adult programs, "Reading Speed Limits" in the language guides
+# (Arabic and Hindi from Subtitle Edit):
+# English I.14 https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977#h_02858920-2fd6-4cf5-8c99-01a2216339d7
+# German I.16 https://partnerhelp.netflixstudios.com/hc/en-us/articles/217351587#h_01GMTX0DZQE9RWF34H58GD5S1K
+# Japanese I.19 https://partnerhelp.netflixstudios.com/hc/en-us/articles/215767517 (no anchors)
+# Korean I.15 https://partnerhelp.netflixstudios.com/hc/en-us/articles/216001127#h_01GMWT9GA57R52D95433QQMKRN
+# Chinese (Simplified) 14 https://partnerhelp.netflixstudios.com/hc/en-us/articles/215986007#h_01GMX0AS18VY8KP9VAD2ZJVC86
+# Thai I.16 https://partnerhelp.netflixstudios.com/hc/en-us/articles/220448308#h_01GMX1QX9NM6ANBQP211DMMEBX
+SRT_CHARS_PER_SECOND = {"ar": 20, "en": 20, "hi": 22, "ja": 4, "ko": 12, "zh": 9}
 SRT_DEFAULT_CHARS_PER_SECOND = 17
+# Minimum 5/6 s and maximum 7 s per cue, at most two lines, General Requirements 1. Duration and
+# 4. Line Treatment:
+# https://partnerhelp.netflixstudios.com/hc/en-us/articles/215758617#h_01JX10EE4D738M1VTR2JT9JVRD
+# https://partnerhelp.netflixstudios.com/hc/en-us/articles/215758617#h_01JX10EE4E3X67FZXP3E5G5RZE
+# Japanese allows 0.5 s, Japanese guide I.9. Duration (link above).
+SRT_MIN_DURATION = 5 / 6
+SRT_MIN_DURATION_JA = 0.5
 SRT_MAX_DURATION = 7.0
+# Two frames between cues, gaps under half a second closed to two frames, Subtitle Timing
+# Guidelines 5: Gaps between subtitles:
+# https://partnerhelp.netflixstudios.com/hc/en-us/articles/360051554394#h_01J9KJ62CMHQD9N8Q3WEK0CRT2
 SRT_FRAME = 1 / 24
-SRT_LINGER = 0.5  # stay up about half a second after the speech ends, where there is room
+SRT_BRIDGE_GAP = 0.5
+# Stay up about half a second after the speech ends, where there is room, Subtitle Timing
+# Guidelines 1: Timing to audio:
+# https://partnerhelp.netflixstudios.com/hc/en-us/articles/360051554394#h_01ENQY265MSMNVX6HPH5M71HFD
+SRT_LINGER = 0.5
 SRT_UNSPACED_LANGUAGES = {"ja", "zh", "th", "lo", "my", "km"}
-# Dashes for two speakers in one cue (first line, second line); other languages use "-" twice
+# Dashes for two speakers in one cue (first line, second line), "Dual Speakers" in the language
+# guides; the language table is Subtitle Edit's, other languages use "-" on both lines:
+# English I.6 https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977#h_2451eb53-33fc-4c00-91cf-8b12e2ce6e27
+# German I.7 https://partnerhelp.netflixstudios.com/hc/en-us/articles/217351587#h_01ENX4FPWE60F8VNQN1MKFJ9MJ
+# Korean I.6 https://partnerhelp.netflixstudios.com/hc/en-us/articles/216001127#h_01ENXC62B7FFW2SXVW0GKPQ5SF
+# Chinese (Simplified) 5 https://partnerhelp.netflixstudios.com/hc/en-us/articles/215986007#h_01EP26NR0K5D7E9EQTFMMSJ9AT
+# Thai I.7 https://partnerhelp.netflixstudios.com/hc/en-us/articles/220448308#h_01EP2APQQQ1GGW09YT07MHCFFH
 SRT_DIALOG_DASHES = {
-    **dict.fromkeys(
-        (
-            "ar",
-            "cs",
-            "es",
-            "fr",
-            "hu",
-            "id",
-            "it",
-            "ko",
-            "ms",
-            "pl",
-            "pt",
-            "ro",
-            "ru",
-            "sk",
-            "th",
-            "vi",
-        ),
-        ("- ", "- "),
-    ),
+    **dict.fromkeys(("ar", "cs", "es", "fr", "hu", "id", "it", "ko", "ms", "pl", "pt", "ro", "ru",
+                     "sk", "th", "vi"), ("- ", "- ")),
     **dict.fromkeys(("fi", "he", "nl", "sr"), ("", "-")),
     "bg": ("", "- "),
-}
-# Punctuation a language guide does not allow, replaced by a space
+}  # fmt: skip
+# Punctuation a language guide does not allow, replaced by a space, "Punctuation" in the guides:
+# Japanese I.17 https://partnerhelp.netflixstudios.com/hc/en-us/articles/215767517 (no anchors)
+# Chinese (Simplified) 12 https://partnerhelp.netflixstudios.com/hc/en-us/articles/215986007#h_01HE8BHXBEB2GPJ17RWXCCYWPC
+# Thai I.14 https://partnerhelp.netflixstudios.com/hc/en-us/articles/220448308#h_01EE5Y6XF8A190F67C9MBK9MZT
 SRT_NO_PUNCTUATION = {"ja": r"[。、]", "th": r"\?|\.(?=\s|$)", "zh": r"[，。,]|\.(?=\s|$)"}  # noqa: RUF001
 SRT_PUNCTUATION = (".", ",", "?", "!", ";", ":", "…", "。", "，", "、", "？", "！", "；", "：")  # noqa: RUF001
 SRT_SENTENCE_END = (".", "?", "!", "…", "。", "？", "！")  # noqa: RUF001
@@ -52,7 +72,9 @@ SRT_PAUSE_SENTENCE = 0.6
 SRT_PAUSE_ALWAYS = 1.25
 SRT_EN_SKIP_LAST = {"with", "however", "a"}
 SRT_EN_SKIP_FIRST = {"to", "and", "but", "with", "off", "have"}
-# English line breaking: break before these words, never after those
+# English line breaking: break before these words, never after those, and keep names together,
+# English guide I.10. Line Treatment:
+# https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977#h_c0a8cf1c-089b-4b6f-94e3-fbb4d03faa2a
 SRT_EN_BREAK_BEFORE = {
     "and", "but", "or", "nor", "so", "yet", "because", "although", "if", "when", "while",
     "that", "which", "who", "where", "after", "before", "until", "than", "as",
@@ -89,9 +111,9 @@ def srt_profile(language):
         language=language,
         line_length=SRT_LINE_LENGTH.get(language, SRT_DEFAULT_LINE_LENGTH),
         chars_per_second=SRT_CHARS_PER_SECOND.get(language, SRT_DEFAULT_CHARS_PER_SECOND),
-        min_duration=0.5 if language == "ja" else 5 / 6,
+        min_duration=SRT_MIN_DURATION_JA if language == "ja" else SRT_MIN_DURATION,
         min_gap=2 * SRT_FRAME,
-        bridge_gap=0.5,
+        bridge_gap=SRT_BRIDGE_GAP,
         spaced=language not in SRT_UNSPACED_LANGUAGES,
         dashes=SRT_DIALOG_DASHES.get(language, ("-", "-")),
         no_punctuation=SRT_NO_PUNCTUATION.get(language),
@@ -102,7 +124,8 @@ def srt_length(text, profile):
     """Counts characters the Netflix way.
 
     Combining marks, such as Thai tone marks and upper or lower vowels, are not counted. In
-    Japanese and Korean, half-width characters, spaces and punctuation count half.
+    Japanese and Korean, half-width characters, spaces and punctuation count half. See the
+    "Character Limitation" links at SRT_LINE_LENGTH.
     """
     half = profile.language in ("ja", "ko")
     return sum(
@@ -388,7 +411,7 @@ def _srt_time(seconds):
 
 def _srt_clean(text, profile):
     """Applies the language's punctuation rules and removes extra white space."""
-    text = text.replace("...", "…")
+    text = text.replace("...", "…")  # English guide I.12. Punctuation, and the other guides
     if profile.no_punctuation:
         text = re.sub(profile.no_punctuation, " ", text)
     return " ".join(text.split())
