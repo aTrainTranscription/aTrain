@@ -48,7 +48,7 @@ def start(
             user_config_path() / "aTrain" if FLATPAK else (ATRAIN_DIR / "settings")
         )
         with patch.dict(os.environ, NICEGUI_STORAGE_PATH=str(nicegui_storage_path)):
-            from nicegui import ui
+            from nicegui import run, ui
 
             from aTrain.pages import about, archive, faq, models, transcribe  # noqa
         from wakepy import keep
@@ -61,6 +61,11 @@ def start(
     print("Running aTrain")
 
     def ui_run(native: bool, reload: bool, show: bool, host: str, port: int):
+        # A worker pool forked from the running server stops all page updates
+        # on Linux; the first download then never finishes in the UI. Windows
+        # and macOS spawn anyway; Flatpak sets its start method in globals.py.
+        if not FLATPAK:
+            run.process_pool_start_method = "spawn"
         ui.run(
             native=native,
             reload=reload,
