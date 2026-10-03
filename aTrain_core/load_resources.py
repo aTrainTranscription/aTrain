@@ -49,7 +49,6 @@ def download_model(model_path: Path, model_info: dict, progress: DictProxy | Non
             repo_id=model_info["repo_id"],
             revision=model_info["revision"],
             local_dir=model_path,
-            local_dir_use_symlinks=False,
             max_workers=1,
         )
     finally:
@@ -58,8 +57,10 @@ def download_model(model_path: Path, model_info: dict, progress: DictProxy | Non
 
 
 def get_model(model: str, progress: DictProxy | None = None) -> Path:
-    """Loads a specific model, downloading and verifying it if necessary."""
+    """Loads a specific model and its dependencies, downloading and verifying them if necessary."""
     models_config = load_model_config_file()
+    for dependency in models_config[model].get("dependencies", []):
+        get_model(dependency, progress)
     model_info = models_config[model]
     models_dir = REQUIRED_MODELS_DIR if model in REQUIRED_MODELS else MODELS_DIR
     model_path = models_dir / model

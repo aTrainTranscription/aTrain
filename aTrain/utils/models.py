@@ -4,10 +4,12 @@ import urllib.error
 import urllib.request
 from concurrent.futures.process import BrokenProcessPool
 from multiprocessing import Manager
+from pathlib import Path
 
 from aTrain.components.dialogs.download import close_dialog_download, dialog_download
 from aTrain.components.dialogs.error import dialog_error
 from aTrain_core.globals import MODELS_DIR, REQUIRED_MODELS_DIR
+from aTrain_core.integrity import find_missing_files
 from aTrain_core.load_resources import get_model, load_model_config_file, remove_model
 from aTrain_core.settings import load_languages
 from nicegui import run, ui
@@ -35,12 +37,14 @@ def read_downloaded_models() -> list:
                 if file.endswith(".bin") and directory_name in list(models_config.keys()):
                     all_downloaded_models.append(directory_name)
                     break
-                if (
-                    file == "model.safetensors"
-                    and models_config.get(directory_name, {}).get("backend")
-                    == "crisper-transformers"
-                ):
-                    all_downloaded_models.append(directory_name)
+                if file == "model.safetensors" and models_config.get(directory_name, {}).get(
+                    "backend"
+                ) in ("crisper-transformers", "qwen3-transformers", "qwen3-aligner"):
+                    # A killed download can leave the weights without the
+                    # config or tokenizer files; offer the model only when complete.
+                    manifest = models_config[directory_name].get("files", {})
+                    if not find_missing_files(Path(directory_path), manifest):
+                        all_downloaded_models.append(directory_name)
                     break
 
     return all_downloaded_models
@@ -48,9 +52,14 @@ def read_downloaded_models() -> list:
 
 def read_transcription_models() -> list:
     all_models = read_downloaded_models()
-    while "diarize" in all_models:
-        all_models.remove("diarize")
-    return all_models
+    config = load_model_config_file()
+    return [
+        model
+        for model in all_models
+        if model != "diarize"
+        and config[model].get("type") != "alignment"
+        and all(dependency in all_models for dependency in config[model].get("dependencies", []))
+    ]
 
 
 def read_model_metadata() -> list:
@@ -60,12 +69,20 @@ def read_model_metadata() -> list:
     all_models_metadata = []
 
     for model in all_models:
+        dependencies = model_metadata[model].get("dependencies", [])
+        size = model_metadata[model]["repo_size_human"]
+        if dependencies:
+            total = model_metadata[model]["repo_size"] + sum(
+                model_metadata[name]["repo_size"] for name in dependencies
+            )
+            size = f"{total / 1_000_000_000:.2f} GB"
         model_info = {
             "model": model,
             "display_name": model_metadata[model].get("display_name", model),
             "group": model_metadata[model].get("group", "All others"),
-            "size": model_metadata[model]["repo_size_human"],
+            "size": size,
             "downloaded": model in downloaded_models,
+            "dependencies_missing": any(name not in downloaded_models for name in dependencies),
         }
         if info := model_metadata[model].get("info"):
             model_info["info"] = info

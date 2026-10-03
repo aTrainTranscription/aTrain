@@ -82,6 +82,9 @@ def check_model(model, language):
     all_models = set(all_model_configs.keys())
     all_models.discard("speaker-detection")
     all_models.discard("diarize")
+    all_models.difference_update(
+        name for name, info in all_model_configs.items() if info.get("type") == "alignment"
+    )
 
     model_available = model in all_models
 

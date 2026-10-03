@@ -305,5 +305,120 @@
             "tokenizer.json": "sha256:d06d0c877b5143ccdcb761407d5650b18a6afc33f9261fcb7e0dd44acbc1c262",
             "vocabulary.json": "sha256:c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1"
         }
+    },
+    "qwen3-asr-0.6b": {
+        "display_name": "Qwen3-ASR 0.6B",
+        "group": "Recommended",
+        "info": "Transcription with word timestamps in 11 languages. Includes the shared Qwen3 aligner, reused by both sizes.",
+        "repo_id": "Qwen/Qwen3-ASR-0.6B-hf",
+        "revision": "7f1569a48a89f3e3f4dc3a5c9d28bddd903bc76c",
+        "license": "Apache-2.0",
+        "backend": "qwen3-transformers",
+        "type": "regular",
+        "languages": [
+            "auto-detect",
+            "zh",
+            "en",
+            "yue",
+            "fr",
+            "de",
+            "it",
+            "ja",
+            "ko",
+            "pt",
+            "ru",
+            "es"
+        ],
+        "dependencies": [
+            "qwen3-forced-aligner-0.6b"
+        ],
+        "files": {
+            ".gitattributes": "sha256:34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
+            "README.md": "sha256:742006d0f99ce6475b1c5e7b66e4a2f166cce836dd7ce3d7f20707252859195a",
+            "chat_template.jinja": "sha256:f50e6b694fbf4a683206e37869990d68333fe95d285730f084c838a34b0d98c2",
+            "config.json": "sha256:9eecf6f1b383e343889c2e6010e632590fa57d4bc678e151c7d6a160a0dfb04a",
+            "generation_config.json": "sha256:9939fc9388b79bd70757f938b87381e817173d6a6158f5af6506c0b73e775c3c",
+            "model.safetensors": "sha256:d3f212dd20abecd315d830bc54ae3865e56ebfc3276484e57b771288ba27fd35",
+            "processor_config.json": "sha256:bc0b230081b44e629dd5b9045b78495615c1831b4b9f4cffe97bd37e82a6156a",
+            "tokenizer.json": "sha256:fe1fad59be22a41ee293363fcf95fdedbc7c93f3b49270b1d2e18bd1399a7a05",
+            "tokenizer_config.json": "sha256:945e980986de2ca7768f3326bfdbb4fbea3406f972b8ae0be233089f2b253c11"
+        },
+        "repo_size": 1576381331,
+        "repo_size_human": "1.58 GB"
+    },
+    "qwen3-asr-1.7b": {
+        "display_name": "Qwen3-ASR 1.7B",
+        "group": "Recommended",
+        "info": "Transcription with word timestamps in 11 languages. Includes the shared Qwen3 aligner, reused by both sizes.",
+        "repo_id": "Qwen/Qwen3-ASR-1.7B-hf",
+        "revision": "bcd2b5b7f32b480ab5790554cfa8347f246a14f3",
+        "license": "Apache-2.0",
+        "backend": "qwen3-transformers",
+        "type": "regular",
+        "languages": [
+            "auto-detect",
+            "zh",
+            "en",
+            "yue",
+            "fr",
+            "de",
+            "it",
+            "ja",
+            "ko",
+            "pt",
+            "ru",
+            "es"
+        ],
+        "dependencies": [
+            "qwen3-forced-aligner-0.6b"
+        ],
+        "files": {
+            ".gitattributes": "sha256:34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
+            "README.md": "sha256:427b9a6a4a32477e9df8790ef92f5cbcde790ee148ee5dd8c36f77d9556998a2",
+            "chat_template.jinja": "sha256:f50e6b694fbf4a683206e37869990d68333fe95d285730f084c838a34b0d98c2",
+            "config.json": "sha256:117ac8e63e2af7cae3665e5a632d6eb03f5f384915519ceb6403c15ec6533f63",
+            "generation_config.json": "sha256:9939fc9388b79bd70757f938b87381e817173d6a6158f5af6506c0b73e775c3c",
+            "model.safetensors": "sha256:2db53c7d81bd9b8cbc6a074e89be2c968a0d373fb4ee68bb1b1e14f7042dfee1",
+            "processor_config.json": "sha256:bc0b230081b44e629dd5b9045b78495615c1831b4b9f4cffe97bd37e82a6156a",
+            "tokenizer.json": "sha256:fe1fad59be22a41ee293363fcf95fdedbc7c93f3b49270b1d2e18bd1399a7a05",
+            "tokenizer_config.json": "sha256:945e980986de2ca7768f3326bfdbb4fbea3406f972b8ae0be233089f2b253c11"
+        },
+        "repo_size": 4087646324,
+        "repo_size_human": "4.09 GB"
+    },
+    "qwen3-forced-aligner-0.6b": {
+        "display_name": "Qwen3 Forced Aligner 0.6B",
+        "group": "All others",
+        "info": "Shared word timestamp model for both Qwen3-ASR sizes. Downloaded automatically with either ASR model.",
+        "repo_id": "Qwen/Qwen3-ForcedAligner-0.6B-hf",
+        "revision": "c07281df297b9905d24a508279258cccf987a064",
+        "license": "Apache-2.0",
+        "backend": "qwen3-aligner",
+        "type": "alignment",
+        "languages": [
+            "zh",
+            "en",
+            "yue",
+            "fr",
+            "de",
+            "it",
+            "ja",
+            "ko",
+            "pt",
+            "ru",
+            "es"
+        ],
+        "files": {
+            ".gitattributes": "sha256:34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930",
+            "README.md": "sha256:30de8315ece609b239c719539336b99188a2a92aef89a1fdcd60b11e40abd063",
+            "chat_template.jinja": "sha256:59b5ae119bda7c00089bba5f49af775791ea67c7aeb7d2b828cddda9463121bf",
+            "config.json": "sha256:82ac390b36a8f80c5a0c4e202367debd149e5d8c30abe4cf5eed439101b1c5ce",
+            "model.safetensors": "sha256:00568245ceca5af1991d28562a75fe1ddc9bfeb041c27fda66947ea05c47fb86",
+            "processor_config.json": "sha256:bc0b230081b44e629dd5b9045b78495615c1831b4b9f4cffe97bd37e82a6156a",
+            "tokenizer.json": "sha256:cadfb9cbd9ff8f4e309075ec6a71b063295ff796afb4b5dbc0fd2873fbb301f2",
+            "tokenizer_config.json": "sha256:945e980986de2ca7768f3326bfdbb4fbea3406f972b8ae0be233089f2b253c11"
+        },
+        "repo_size": 1847236856,
+        "repo_size_human": "1.85 GB"
     }
 }

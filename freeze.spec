@@ -18,6 +18,9 @@ datas += collect_data_files('pyannote.audio.models.embedding')
 datas += collect_data_files('pytorch_lightning')
 datas += collect_data_files('faster_whisper')
 datas += collect_data_files('aTrain_core')
+datas += collect_data_files('nagisa')
+datas += copy_metadata('nagisa')
+datas += copy_metadata('soynlp')
 datas += copy_metadata('lightning')
 datas += copy_metadata('lightning_utilities')
 datas += copy_metadata('torch')
@@ -40,6 +43,7 @@ hiddenimports = ['pytorch_lightning','pyyaml','huggingface-hub','pyannote','pyto
 hiddenimports += collect_submodules('wakepy')
 hiddenimports += collect_submodules('pyannote')
 hiddenimports += collect_submodules('sklearn')
+hiddenimports += collect_submodules('transformers.models.qwen3_asr')
 
 a = Analysis(
     ['freeze.py'],

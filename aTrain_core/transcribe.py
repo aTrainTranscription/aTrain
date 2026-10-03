@@ -45,6 +45,9 @@ from aTrain_core.outputs import (
 )
 from aTrain_core.settings import Device, Settings
 
+# Backends that run through Transformers, always in a separate process.
+TRANSFORMERS_BACKENDS = ("crisper-transformers", "qwen3-transformers")
+
 
 class CustomProgressHook(ProgressHook):
     """A custom progress hook that updates the GUI and prints progress information during processing."""
@@ -84,7 +87,7 @@ def transcribe(settings: Settings):
     create_metadata(settings, audio_duration)
     model_path = get_model(settings.model)
     write_logfile("Model loaded", settings.file_id)
-    if settings.device == Device.GPU or backend == "crisper-transformers":
+    if settings.device == Device.GPU or backend in TRANSFORMERS_BACKENDS:
         write_logfile("Transcribing in seperate process", settings.file_id)
         transcript = run_transcription_in_process(settings, model_path, audio_array)
     elif settings.device == Device.CPU:
@@ -136,10 +139,15 @@ def run_transcription(
         model_info = load_model_config_file()[settings.model]
         backend = model_info["backend"]
         if backend == "crisper-transformers":
-            from aTrain_core.backends.crisper_transformers import transcribe as transcribe_crisper
+            from aTrain_core.backends.crisper_transformers import transcribe as transcribe_model
 
             write_logfile("Transcribing with CrisperWhisper in verbatim mode.", settings.file_id)
-            transcript = transcribe_crisper(settings, model_path, audio_array)
+        elif backend == "qwen3-transformers":
+            from aTrain_core.backends.qwen3_transformers import transcribe as transcribe_model
+
+            write_logfile("Transcribing with Qwen3 ASR and word alignment.", settings.file_id)
+        if backend in TRANSFORMERS_BACKENDS:
+            transcript = transcribe_model(settings, model_path, audio_array)
             write_logfile("Transcription successful", settings.file_id)
             if settings.device == Device.CPU:
                 returnDict["transcript"] = transcript
@@ -191,7 +199,7 @@ def run_transcription(
             os._exit(0)
 
     except Exception as error:
-        if settings.device == Device.CPU and backend != "crisper-transformers":
+        if settings.device == Device.CPU and backend not in TRANSFORMERS_BACKENDS:
             raise error
         returnDict["error"] = error
 

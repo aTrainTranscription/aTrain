@@ -226,7 +226,14 @@ def test_the_real_models_file_produces_a_component_for_every_model():
     # A model added without a repo_id or revision would otherwise reach the
     # release as a component with a malformed purl.
     for component in components:
-        assert component["purl"].startswith("pkg:huggingface/aTrain-core/")
+        assert component["purl"].startswith("pkg:huggingface/aTrain-core/") or (
+            component["purl"].split("@")[0]
+            in {
+                "pkg:huggingface/Qwen/Qwen3-ASR-0.6B-hf",
+                "pkg:huggingface/Qwen/Qwen3-ASR-1.7B-hf",
+                "pkg:huggingface/Qwen/Qwen3-ForcedAligner-0.6B-hf",
+            }
+        )
         assert component["version"]
 
 

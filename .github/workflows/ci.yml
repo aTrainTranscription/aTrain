@@ -173,6 +173,80 @@ jobs:
       - name: Run transcription E2E smoke test
         run: .venv/bin/python -m pytest tests/core -v
 
+  e2e-crisper:
+    name: e2e (CrisperWhisper word timestamps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ATRAIN_TEST_CRISPER: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install aTrain engine deps (CPU torch) + pytest
+        # Constrain every dependency to uv.lock so CI tests the shipped versions.
+        # The locked Linux pin torch==2.9.1 also admits the +cpu build.
+        run: |
+          uv venv
+          uv export --locked --no-emit-project --no-hashes --no-dev \
+            --output-file "$RUNNER_TEMP/constraints.txt" > /dev/null
+          uv pip install \
+            . \
+            "torch==2.9.1+cpu" "torchaudio==2.9.1+cpu" pytest pytest-asyncio \
+            --constraint "$RUNNER_TEMP/constraints.txt" \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Check real CrisperWhisper transcription and attention outputs
+        env:
+          ATRAIN_USER_DIR: ${{ runner.temp }}/atrain-crisper
+          HF_HOME: ${{ runner.temp }}/crisper-hf
+        run: .venv/bin/python -m pytest tests/core/test_crisper_transformers_e2e.py -v
+
+  e2e-qwen:
+    name: e2e (Qwen3 ASR and forced alignment)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ATRAIN_TEST_QWEN: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install aTrain engine deps (CPU torch) + pytest
+        # Constrain every dependency to uv.lock so CI tests the shipped versions.
+        # The locked Linux pin torch==2.9.1 also admits the +cpu build.
+        run: |
+          uv venv
+          uv export --locked --no-emit-project --no-hashes --no-dev \
+            --output-file "$RUNNER_TEMP/constraints.txt" > /dev/null
+          uv pip install \
+            . \
+            "torch==2.9.1+cpu" "torchaudio==2.9.1+cpu" pytest pytest-asyncio \
+            --constraint "$RUNNER_TEMP/constraints.txt" \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Check ASR, long audio, word alignment and offline CLI
+        env:
+          ATRAIN_USER_DIR: ${{ runner.temp }}/atrain-qwen
+          HF_HOME: ${{ runner.temp }}/qwen-hf
+        run: .venv/bin/python -m pytest tests/core/test_qwen3_transformers_e2e.py -v
+
   e2e-app:
     name: e2e (app, full stack)
     runs-on: ubuntu-latest
@@ -286,7 +360,12 @@ jobs:
         run: |
           uv venv
           uv pip install --no-deps .
-          uv pip install platformdirs pyyaml show-in-file-manager huggingface_hub pytest
+          # Exercise the shipped Hub API rather than whatever major version is
+          # latest on PyPI; constraints keep this install free of torch/GTK.
+          uv export --locked --no-emit-project --no-hashes --no-dev --extra gui \
+            --output-file "$RUNNER_TEMP/unit-constraints.txt" > /dev/null
+          uv pip install --constraint "$RUNNER_TEMP/unit-constraints.txt" \
+            platformdirs pyyaml show-in-file-manager huggingface_hub pytest
 
       - name: Run unit tests
         # `uv run --no-sync` finds the venv we just built and invokes python
