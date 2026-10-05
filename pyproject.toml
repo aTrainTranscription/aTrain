@@ -34,17 +34,19 @@ dependencies = [
   "pandas==3.0.6",
   "pyannote.audio==4.0.7",
   "numpy==2.4.6",
-  "werkzeug==3.1.8",
   # Transformers 5.17 requires Hub >=1.5,<2; download and inference paths
   # are covered by the core integration tests before changing this pin.
   "huggingface-hub==1.33.0",
+  "werkzeug==3.1.9",
+  # transformers 4.57 requires >=0.34; keep this below 1 until all callers
+  # have been evaluated against the Hub 1.x API.
   "torch==2.9.1+cu128; sys_platform == 'win32'",
   "torch==2.9.1; sys_platform != 'win32'",
   # torchaudio must match torch (ABI-coupled); keep in lockstep with the pins above.
   "torchaudio==2.9.1+cu128; sys_platform == 'win32'",
   "torchaudio==2.9.1; sys_platform != 'win32'",
   "typer==0.27.2",
-  "platformdirs==4.11.12",
+  "platformdirs==4.12.2",
   "jiwer==4.0.0",
 ]
 
