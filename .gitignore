@@ -33,3 +33,7 @@ data/
 /flatpak_app/
 /repo/
 /*.flatpak
+# Local state of AI coding agents (shared instructions live in AGENTS.md)
+.claude/settings.local.json
+.codex/
+CLAUDE.local.md

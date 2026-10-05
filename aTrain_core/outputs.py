@@ -2,13 +2,13 @@ import json
 import os
 import shutil
 import time
-from dataclasses import asdict, is_dataclass
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 import yaml
 
+from aTrain_core.backends.common import ends_sentence
 from aTrain_core.globals import (
     LOG_FILENAME,
     METADATA_FILENAME,
@@ -40,7 +40,7 @@ def create_file_id(file_path, timestamp):
     return file_id
 
 
-def create_output_files(result, speaker_detection, file_id):
+def create_output_files(result, speaker_detection, file_id, subtitles=None):
     """Creates output files based on the transcription result."""
     create_json_file(result, file_id)
     create_txt_file(
@@ -53,7 +53,7 @@ def create_output_files(result, speaker_detection, file_id):
         result, file_id, speaker_detection, maxqda=False, timestamps=True, brackets=False
     )  # NEW: NVivo output format
     create_txt_file(result, file_id, speaker_detection, maxqda=True, timestamps=True, brackets=True)
-    create_srt_file(result, file_id)
+    create_srt_file(subtitles or result, file_id)
 
 
 def create_json_file(result, file_id):
@@ -128,35 +128,6 @@ def transform_speakers_results(diarization_segments):
     return diarize_df
 
 
-def named_tuple_to_dict(obj):
-    """Converts named tuple to dictionary."""
-    if isinstance(obj, dict):
-        return {key: named_tuple_to_dict(value) for key, value in obj.items()}
-    if isinstance(obj, list):
-        return [named_tuple_to_dict(value) for value in obj]
-    if is_dataclass(obj):
-        return {key: named_tuple_to_dict(value) for key, value in asdict(obj).items()}
-    if isnamedtupleinstance(obj) or (hasattr(obj, "_asdict") and callable(obj._asdict)):
-        return {key: named_tuple_to_dict(value) for key, value in obj._asdict().items()}
-    if hasattr(obj, "__dict__"):
-        return {key: named_tuple_to_dict(value) for key, value in vars(obj).items()}
-    if isinstance(obj, tuple):
-        return tuple(named_tuple_to_dict(value) for value in obj)
-    return obj
-
-
-def isnamedtupleinstance(x):
-    """Checks if the object is an instance of namedtuple."""
-    _type = type(x)
-    bases = _type.__bases__
-    if len(bases) != 1 or bases[0] is not tuple:
-        return False
-    fields = getattr(_type, "_fields", None)
-    if not isinstance(fields, tuple):
-        return False
-    return all(type(i) is str for i in fields)
-
-
 def create_metadata(settings: Settings, audio_duration: int):
     """Creates metadata file for the transcription."""
 
@@ -219,41 +190,99 @@ def assign_word_speakers(diarize_df, transcript_result, fill_nearest=False):
     """
     transcript_segments = transcript_result["segments"]
     for seg in transcript_segments:
-        diarize_df["intersection"] = np.minimum(diarize_df["end"], seg["end"]) - np.maximum(
-            diarize_df["start"], seg["start"]
-        )
-        diarize_df["union"] = np.maximum(diarize_df["end"], seg["end"]) - np.minimum(
-            diarize_df["start"], seg["start"]
-        )
-        dia_tmp = diarize_df[diarize_df["intersection"] > 0] if not fill_nearest else diarize_df
-        if len(dia_tmp) > 0:
-            speaker = (
-                dia_tmp.groupby("speaker")["intersection"]
-                .sum()
-                .sort_values(ascending=False)
-                .index[0]
-            )
-            seg["speaker"] = speaker
         if "words" in seg:
             for word in seg["words"]:
                 if "start" in word:
                     diarize_df["intersection"] = np.minimum(
                         diarize_df["end"], word["end"]
                     ) - np.maximum(diarize_df["start"], word["start"])
-                    diarize_df["union"] = np.maximum(diarize_df["end"], word["end"]) - np.minimum(
-                        diarize_df["start"], word["start"]
-                    )
                     dia_tmp = (
                         diarize_df[diarize_df["intersection"] > 0]
                         if not fill_nearest
                         else diarize_df
                     )
+                    at_onset = dia_tmp[
+                        (dia_tmp["start"] <= word["start"]) & (dia_tmp["end"] > word["start"])
+                    ]
+                    if len(at_onset) > 0:
+                        dia_tmp = at_onset
                     if len(dia_tmp) > 0:
                         speaker = (
                             dia_tmp.groupby("speaker")["intersection"]
                             .sum()
-                            .sort_values(ascending=False)
+                            .sort_values(ascending=False, kind="stable")
                             .index[0]
                         )
                         word["speaker"] = speaker
+            durations = {}
+            for word in seg["words"]:
+                if "speaker" in word:
+                    duration = word["end"] - word["start"]
+                    durations[word["speaker"]] = durations.get(word["speaker"], 0) + duration
+            if durations:
+                seg["speaker"] = max(durations, key=durations.get)
+        # Fall back to the segment's own overlap when no word got a speaker.
+        if "speaker" not in seg:
+            diarize_df["intersection"] = np.minimum(diarize_df["end"], seg["end"]) - np.maximum(
+                diarize_df["start"], seg["start"]
+            )
+            dia_tmp = diarize_df[diarize_df["intersection"] > 0] if not fill_nearest else diarize_df
+            if len(dia_tmp) > 0:
+                speaker = (
+                    dia_tmp.groupby("speaker")["intersection"]
+                    .sum()
+                    .sort_values(ascending=False, kind="stable")
+                    .index[0]
+                )
+                seg["speaker"] = speaker
+    # Segments overlapping no speaker turn take the speaker of the nearest turn.
+    if len(diarize_df) > 0:
+        for seg in transcript_segments:
+            if "speaker" not in seg:
+                distance = np.maximum(
+                    diarize_df["start"] - seg["end"], seg["start"] - diarize_df["end"]
+                )
+                seg["speaker"] = diarize_df.loc[distance.idxmin(), "speaker"]
+                for word in seg.get("words", []):
+                    word.setdefault("speaker", seg["speaker"])
     return transcript_result
+
+
+def smooth_speaker_flips(segments, max_segments=2, max_gap=1.0):
+    """Give short speaker runs the majority speaker of their sentence.
+
+    A sentence ends at sentence punctuation or at a pause of max_gap or more. A run of up to
+    max_segments is relabeled when another speaker holds more of the sentence's duration.
+    """
+    sentence = []
+    for index, seg in enumerate(segments):
+        sentence.append(seg)
+        if (
+            index + 1 == len(segments)
+            or ends_sentence(seg["text"])
+            or segments[index + 1]["start"] - seg["end"] >= max_gap
+        ):
+            _relabel_short_runs(sentence, max_segments)
+            sentence = []
+    return segments
+
+
+def _relabel_short_runs(sentence, max_segments):
+    """Relabel a sentence's short minority speaker runs to its majority speaker."""
+    durations = {}
+    for seg in sentence:
+        speaker = seg.get("speaker")
+        durations[speaker] = durations.get(speaker, 0) + seg["end"] - seg["start"]
+    majority = max(durations, key=durations.get)
+    i = 0
+    while i < len(sentence):
+        speaker = sentence[i].get("speaker")
+        j = i
+        while j + 1 < len(sentence) and sentence[j + 1].get("speaker") == speaker:
+            j += 1
+        if j - i + 1 <= max_segments and durations[speaker] < durations[majority]:
+            for seg in sentence[i : j + 1]:
+                seg["speaker"] = majority
+                for word in seg.get("words", []):
+                    word["speaker"] = majority
+        i = j + 1

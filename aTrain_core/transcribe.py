@@ -25,6 +25,11 @@ from pyannote.audio.pipelines.utils.hook import ProgressHook
 from tqdm import tqdm
 from werkzeug.utils import secure_filename
 
+from aTrain_core.backends.common import (
+    SRT_MAX_DURATION,
+    group_word_segments,
+    words_to_segments,
+)
 from aTrain_core.globals import SAMPLING_RATE, TIMESTAMP_FORMAT
 from aTrain_core.load_resources import get_model, load_model_config_file
 from aTrain_core.outputs import (
@@ -34,7 +39,7 @@ from aTrain_core.outputs import (
     create_file_id,
     create_metadata,
     create_output_files,
-    named_tuple_to_dict,
+    smooth_speaker_flips,
     transform_speakers_results,
     write_logfile,
 )
@@ -87,12 +92,16 @@ def transcribe(settings: Settings):
         transcript = run_transcription(settings, model_path, audio_array)
     if settings.speaker_detection and transcript:
         transcript = run_speaker_detection(settings, audio_duration, audio_array, transcript)
-    if backend == "crisper-transformers" and transcript:
-        from aTrain_core.backends.crisper_transformers import group_word_segments
-
-        transcript = {"segments": group_word_segments(transcript["segments"])}
-    create_output_files(transcript, settings.speaker_detection, settings.file_id)
-    write_logfile("No speaker detection. Created output files", settings.file_id)
+    subtitles = transcript
+    if transcript:
+        join_raw = backend != "crisper-transformers"
+        segments = transcript["segments"]
+        transcript = {"segments": group_word_segments(segments, join_raw)}
+        subtitles = {
+            "segments": group_word_segments(segments, join_raw, max_duration=SRT_MAX_DURATION)
+        }
+    create_output_files(transcript, settings.speaker_detection, settings.file_id, subtitles)
+    write_logfile("Created output files", settings.file_id)
     add_processing_time_to_metadata(settings.file_id)
     write_logfile("Processing time added to metadata", settings.file_id)
 
@@ -155,7 +164,6 @@ def run_transcription(
             beam_size=5,
             word_timestamps=True,
             language=None if settings.language == "auto-detect" else settings.language,
-            max_new_tokens=None if model_type == "distil" else 128,
             no_speech_threshold=0.6,
             condition_on_previous_text=False if model_type == "distil" else True,
             initial_prompt=settings.initial_prompt,
@@ -164,7 +172,17 @@ def run_transcription(
             else settings.temperature,
         )
         segments = transcription_with_progress_bar(segments, info, settings.progress)
-        transcript = {"segments": [named_tuple_to_dict(s) for s in segments]}
+        words = []
+        for segment in segments:
+            if segment.words:
+                words.extend(segment.words)
+            elif segment.text.strip():
+                write_logfile(
+                    f"Segment without word timestamps kept as one word: {segment.start:.1f}s",
+                    settings.file_id,
+                )
+                words.append({"word": segment.text, "start": segment.start, "end": segment.end})
+        transcript = {"segments": words_to_segments(words)}
         write_logfile("Transcription successful", settings.file_id)
         if settings.device == Device.CPU:
             return transcript
@@ -261,5 +279,6 @@ def run_speaker_detection(
     speaker_results = transform_speakers_results(segments)
     write_logfile("Transformed diarization segments", settings.file_id)
     transcript_with_speaker = assign_word_speakers(speaker_results, transcript)
+    smooth_speaker_flips(transcript_with_speaker["segments"])
     write_logfile("Assigned speakers to words", settings.file_id)
     return transcript_with_speaker
