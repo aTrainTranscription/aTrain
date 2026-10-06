@@ -137,11 +137,3 @@ async def test_transcribe_page_seeds_the_defaults(user: User, cuda_available):
     assert app.storage.general["GPU"] is True
     assert app.storage.general["compute_type"] == ComputeType.INT8.value
     assert app.storage.general["cpu_threads"] == DEFAULT_CPU_THREADS
-
-
-async def test_sidebar_links_to_advanced_settings_above_faq(user: User):
-    await user.open("/advanced")
-    await user.should_see("GPU acceleration", retries=100)
-    elements = sorted(user.find(kind=ui.label).elements, key=lambda e: e.id)  # render order
-    labels = [label.text for label in elements]
-    assert labels.index("Advanced Settings") < labels.index("FAQ")

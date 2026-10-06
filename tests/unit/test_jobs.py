@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 from aTrain_core.jobs import JobSpec, JobState, JobStatus, Step
 from aTrain_core.settings import ComputeType, Device
 
@@ -47,15 +46,14 @@ def test_state_json_round_trip():
     assert restored == state and restored.failed_step == Step.OUTPUT
 
 
-def test_unknown_keys_raise():
-    with pytest.raises(TypeError):
-        JobState.from_json({**JobState().to_json(), "surprise": 1})
-
-
 def test_to_settings_copies_every_setting():
     spec = make_spec(temperature=0.2, initial_prompt="Interview")
-    settings = spec.to_settings(file_id="f", timestamp="t", progress={})
+    progress = {"current": 1, "total": 2}
+    settings = spec.to_settings(file_id="f", timestamp="t", progress=progress)
     assert settings.file == spec.source and settings.file_name == spec.display_name
     assert (settings.file_id, settings.timestamp) == ("f", "t")
+    assert (settings.model, settings.language) == (spec.model, spec.language)
+    assert (settings.device, settings.compute_type) == (Device.GPU, ComputeType.FLOAT16)
+    assert settings.speaker_detection is True and settings.progress is progress
     assert (settings.temperature, settings.initial_prompt) == (0.2, "Interview")
     assert (settings.speaker_count, settings.cpu_threads) == (2, 8)

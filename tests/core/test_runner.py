@@ -133,49 +133,38 @@ def test_valid_checkpoints_are_reused(env):
         outputs.write_checkpoint(
             job.work_dir / name, transcript=transcript, audio_duration=3, source=job.spec.source
         )
-    transcriber = FakeTranscriber()
 
-    runner.run_phase1(job, FakeChannel(), lambda key: transcriber)
+    def unexpected_load(key):
+        pytest.fail("A valid checkpoint must not load a model")
+
+    runner.run_phase1(job, FakeChannel(), unexpected_load)
     phase2 = FakeChannel()
-    runner.run_phase2(job, phase2, lambda device: "pipeline")
+    runner.run_phase2(job, phase2, unexpected_load)
 
-    assert transcriber.calls == [] and diarized == []
+    assert diarized == []
     assert phase2.of(runner.JobDone)[0].audio_duration == 3
 
 
-def test_output_error_keeps_checkpoints(env, monkeypatch):
-    tmp_path, _ = env
-
-    def broken(*args, **kwargs):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(runner, "write_final_outputs", broken)
-    job = make_job(tmp_path, "a")
-    runner.run_phase1(job, FakeChannel(), lambda key: FakeTranscriber())
-    channel = FakeChannel()
-    runner.run_phase2(job, channel, lambda device: "pipeline")
-
-    assert [(f.step, f.error) for f in channel.of(runner.JobFailed)] == [(Step.OUTPUT, "disk full")]
-    assert (job.work_dir / runner.RAW_CHECKPOINT).is_file()
-    assert (job.work_dir / runner.DIARIZED_CHECKPOINT).is_file()
-
-
-def test_interrupted_output_writing_leaves_the_archive_untouched(env, monkeypatch):
+def test_output_failure_keeps_checkpoints_and_only_publishes_on_retry(env, monkeypatch):
     tmp_path, _ = env
     archive = tmp_path / "transcriptions"
-    job = make_job(tmp_path, "a", speaker_detection=False)
-    transcriber = FakeTranscriber()
+    job = make_job(tmp_path, "a")
+    runner.run_phase1(job, FakeChannel(), lambda key: FakeTranscriber())
+    failed = FakeChannel()
 
     def broken(directory):
         raise OSError("disk full")
 
     with monkeypatch.context() as patch:
         patch.setattr(outputs, "add_processing_time_to_metadata", broken)  # most files exist
-        runner.run_phase1(job, FakeChannel(), lambda key: transcriber)
+        runner.run_phase2(job, failed, lambda device: "pipeline")
+    assert [(f.step, f.error) for f in failed.of(runner.JobFailed)] == [(Step.OUTPUT, "disk full")]
+    assert (job.work_dir / runner.RAW_CHECKPOINT).is_file()
+    assert (job.work_dir / runner.DIARIZED_CHECKPOINT).is_file()
     assert list(archive.glob("[!.]*")) == []  # only the hidden .pending folder
 
     channel = FakeChannel()
-    runner.run_phase1(job, channel, lambda key: transcriber)  # the retry replaces the rest
+    runner.run_phase2(job, channel, lambda device: "pipeline")  # the retry replaces the rest
     assert [p.name for p in archive.glob("[!.]*")] == [channel.of(runner.JobDone)[0].file_id]
 
 

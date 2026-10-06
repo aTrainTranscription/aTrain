@@ -35,7 +35,7 @@ def known_models(monkeypatch):
 
 
 # --- speakers: one select for detection and count ---------------------------
-# (every option and the custom count: tests/ui/test_transcribe_queue.py)
+# (custom count keyboard interaction: tests/e2e_browser/test_transcribe_interactions.py)
 
 
 async def test_speakers_select_writes_storage(user: User):
@@ -45,8 +45,12 @@ async def test_speakers_select_writes_storage(user: User):
     select.set_value("auto")
     assert app.storage.general["speaker_detection"] is True
     assert app.storage.general["speaker_count"] is None
+    select.set_value(3)
+    assert app.storage.general["speaker_detection"] is True
+    assert app.storage.general["speaker_count"] == 3
     select.set_value("off")
     assert app.storage.general["speaker_detection"] is False
+    assert app.storage.general["speaker_count"] is None
 
 
 # --- language: select falls back to first available language for a model ---

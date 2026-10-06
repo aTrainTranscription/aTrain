@@ -9,7 +9,6 @@ import aTrain_core.transcribe  # noqa: F401  pre-import so the splash import is 
 import pytest
 from aTrain.components.settings import file as file_component
 from aTrain.components.settings import model as model_component
-from aTrain.components.settings.speakers import speaker_settings
 from aTrain.utils import file_selection, flatpak_portal, queue_ui, transcription
 from aTrain.utils.file_selection import FileSelection, check_dropped, ignored_files
 from aTrain.utils.linux_drop import EVENT
@@ -124,12 +123,6 @@ S = JobStatus
 # --- the page without jobs ------------------------------------------------------------
 
 
-async def test_panel_is_hidden_while_the_queue_is_empty(service, user: User):
-    await open_page(user)
-    await user.should_not_see(marker="queue_status")
-    await user.should_not_see("The queue is empty.")
-
-
 async def test_locked_queue_disables_add_to_queue(monkeypatch, user: User):
     async def locked():
         raise QueueLockedError("held")
@@ -148,6 +141,8 @@ async def test_add_to_queue_adds_one_job_per_file(
     service, known_models, selections, tmp_path, user: User
 ):
     await open_page(user)
+    await user.should_not_see(marker="queue_status")
+    await user.should_not_see("The queue is empty.")
     add_button = one(user, "add_to_queue")
     assert not add_button.enabled
     await user.should_see("Drop audio or video files")
@@ -207,18 +202,6 @@ async def test_a_folder_offers_a_copy_next_to_the_files(service, selections, tmp
     assert selection.export_dir is None
 
 
-@pytest.mark.parametrize(
-    ("value", "settings"),
-    [
-        ("off", {"speaker_detection": False, "speaker_count": None}),
-        ("auto", {"speaker_detection": True, "speaker_count": None}),
-        (3, {"speaker_detection": True, "speaker_count": 3}),
-    ],
-)
-def test_speaker_options_set_the_job_settings(value, settings):
-    assert speaker_settings(value) == settings
-
-
 # --- the running job ------------------------------------------------------------------
 
 
@@ -238,25 +221,20 @@ async def test_panel_shows_the_running_job(service, tmp_path, user: User):
     await user.should_see(marker="stop_all")  # the running and the queued job are open
 
 
-async def test_idle_states(service, tmp_path, user: User):
+async def test_pause_resume_and_finished_states(service, tmp_path, user: User):
     add(service, tmp_path, "queued")
     await open_page(user)
     await user.should_see("Paused · 1 waiting", retries=200)
     await user.should_not_see(marker="stop_job")
+    assert one(user, "pause_queue").text == "Resume"
+    user.find(marker="pause_queue").click()
+    assert not service.paused
+    user.find(marker="pause_queue").click()  # pause before yielding to the scheduler
+    assert service.paused
 
     service.store.update("queued", status=S.CANCELLED)
     await user.should_see("All jobs finished", retries=20)
     await user.should_see(marker="queue_status")  # finished jobs stay listed
-
-
-async def test_pause_and_resume(service, tmp_path, user: User):
-    add(service, tmp_path, "queued")
-    await open_page(user)
-    await user.should_see(marker="pause_queue", retries=200)
-    assert one(user, "pause_queue").text == "Resume"
-    user.find(marker="pause_queue").click()
-    assert not service.paused
-    service.pause()
 
 
 async def test_stop_all_shows_with_more_than_one_open_job(service, tmp_path, user: User):

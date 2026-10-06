@@ -1,9 +1,9 @@
 """Full UI E2E via NiceGUI's in-process User fixture (no browser).
 
 Renders the real transcription page and drives a transcription through the
-app's real wiring (upload handler -> queue -> phase children -> "Done" in the
-queue list), with the tiny model on CPU. Complements the lighter
-boot-serve smoke.
+upload staging and queue APIs (stage_upload -> start_paths -> phase children
+-> "Done" in the queue list), with the tiny model on CPU. Upload-handler and
+button wiring are covered separately in test_transcribe_queue.py.
 """
 
 from pathlib import Path
@@ -38,7 +38,7 @@ CHEAP_SETTINGS = {
 
 
 async def test_transcribe_through_ui(user: User):
-    """Browser-upload path (Windows/macOS): NiceGUI hands us an upload event."""
+    """Stage a browser upload and run it through the real queue to the rendered result."""
     await user.open("/")
     # The UI settings components write into app.storage.general; set them
     # directly to force the cheap path (tiny model, CPU) over the UI default.
