@@ -166,7 +166,7 @@ async def test_add_to_queue_adds_one_job_per_file(
     selection = selections[-1]
     selection.add_paths(paths)
     await user.should_see("2 files selected")
-    assert add_button.enabled and add_button.text == "Add 2 files to queue"
+    assert add_button.enabled and add_button.text == "Transcribe 2 files"
     one(user, "select_speakers").set_value(2)
 
     user.find(marker="add_to_queue").click()

@@ -31,7 +31,10 @@ async def page(client: Client):
 
         def update_add():
             count = len(files.names)
-            add.text = f"Add {count} files to queue" if count > 1 else "Add to queue"
+            if service is None or service.jobs():
+                add.text = f"Add {count} files to queue" if count > 1 else "Add to queue"
+            else:  # nothing in the queue yet
+                add.text = f"Transcribe {count} files" if count > 1 else "Transcribe"
             add.set_enabled(bool(count) and not files.uploading and not locked)
 
         async def add_to_queue():

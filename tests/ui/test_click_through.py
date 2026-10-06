@@ -21,7 +21,7 @@ FIXTURE = Path(__file__).parent.parent / "fixtures" / "sample_short.mp3"
 
 async def test_main_page_renders(user: User):
     await user.open("/")
-    await user.should_see(kind=ui.button, content="Add to queue", retries=100)
+    await user.should_see(kind=ui.button, content="Transcribe", retries=100)
 
 
 CHEAP_SETTINGS = {

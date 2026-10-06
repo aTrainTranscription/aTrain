@@ -133,7 +133,7 @@ async def test_input_initial_prompt_binds_to_storage(user: User, cuda_available)
 async def test_transcribe_page_seeds_the_defaults(user: User, cuda_available):
     # A job can be added without opening the Advanced Settings page first.
     await user.open("/")
-    await user.should_see(kind=ui.button, content="Add to queue", retries=100)
+    await user.should_see(kind=ui.button, content="Transcribe", retries=100)
     assert app.storage.general["GPU"] is True
     assert app.storage.general["compute_type"] == ComputeType.INT8.value
     assert app.storage.general["cpu_threads"] == DEFAULT_CPU_THREADS
