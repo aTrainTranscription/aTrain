@@ -42,7 +42,7 @@ description:
       aTrain automatically transcribes speech recordings using
       state-of-the-art machine-learning models, without uploading any data.
       It was developed by researchers at the Center for Data Science in Business and Society
-       at the University of Graz and tested by researchers at
+      at the University of Graz and tested by researchers at
       the Know-Center Graz.
 
 
@@ -88,8 +88,8 @@ description:
     longDescription: >
       aTrain transkribiert Sprachaufnahmen automatisch mit modernen
       Machine-Learning-Modellen, ohne dass Daten hochgeladen werden.
-     Entwickelt wurde die Software von Forschenden am Center for Data Science in Business and Society
-       der Universität Graz und getestet von Forschenden am
+      Entwickelt wurde die Software von Forschenden am Center for Data Science in Business and Society
+      der Universität Graz und getestet von Forschenden am
       Know-Center Graz.
 
 
