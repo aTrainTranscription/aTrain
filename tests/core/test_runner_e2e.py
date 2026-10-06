@@ -73,7 +73,7 @@ def test_jobs_match_single_file_runs(data_dir, monkeypatch, tmp_path):
         for e in phase1 + phase2
         if isinstance(e, runner.JobFailed | runner.PhaseDied)
     ] == []
-    file_ids = {e.job_id: e.file_id for e in phase1 + phase2 if isinstance(e, runner.JobFileId)}
+    file_ids = {e.job_id: e.file_id for e in phase1 + phase2 if isinstance(e, runner.JobDone)}
     assert sorted(file_ids) == ["aaa", "bbb", "ccc"]
     archive = data_dir / "transcriptions"
     for file_id in file_ids.values():

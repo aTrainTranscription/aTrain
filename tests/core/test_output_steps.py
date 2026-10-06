@@ -69,6 +69,22 @@ def test_claim_file_id_adds_suffix_in_the_same_minute(archive):
     assert (archive / first).is_dir() and (archive / second).is_dir()
 
 
+def test_publish_moves_a_complete_folder_into_the_archive(archive, tmp_path):
+    staged = outputs.fresh_output_dir(
+        outputs.free_file_id(Path("interview.mp3"), "2026-09-30 14-05-12")
+    )
+    staged.mkdir(parents=True)
+    (staged / "transcription.txt").write_text("done", encoding="utf-8")
+
+    outputs.publish(staged)
+
+    assert (archive / "2609301405-intervi" / "transcription.txt").is_file()
+    assert not staged.exists()
+    staged.mkdir()
+    with pytest.raises(FileExistsError):  # never into an existing folder
+        outputs.publish(staged)
+
+
 def test_make_logger_appends_timestamped_lines(tmp_path):
     log = outputs.make_logger(tmp_path / "log.txt")
     log("one")

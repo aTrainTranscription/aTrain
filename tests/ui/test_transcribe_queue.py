@@ -11,9 +11,9 @@ from aTrain.components.settings import file as file_component
 from aTrain.components.settings import model as model_component
 from aTrain.components.settings.speakers import CUSTOM_ERROR, speaker_settings
 from aTrain.utils import file_selection, queue_ui, transcription
-from aTrain.utils.file_selection import check_dropped, ignored_files
+from aTrain.utils.file_selection import FileSelection, check_dropped, ignored_files
 from aTrain.utils.linux_drop import EVENT
-from aTrain.utils.transcription import UploadPayload, start_paths, start_payloads
+from aTrain.utils.transcription import start_paths
 from aTrain_core.jobs import JobStatus, JobStore, QueueLockedError, Step
 from aTrain_core.queue_service import QueueService
 from aTrain_core.settings import ComputeType, Device
@@ -53,6 +53,20 @@ async def service(tmp_path, monkeypatch):
     monkeypatch.setattr(queue_ui, "get_queue_service", get_service)
     yield service
     await service.stop()
+
+
+@pytest.fixture
+def selections(monkeypatch) -> list[FileSelection]:
+    """The file selections of the pages opened in the test, newest last."""
+    made = []
+
+    class Recorded(FileSelection):
+        def __init__(self, *args):
+            super().__init__(*args)
+            made.append(self)
+
+    monkeypatch.setattr(file_component, "FileSelection", Recorded)
+    return made
 
 
 @pytest.fixture
@@ -117,11 +131,6 @@ async def test_panel_is_hidden_while_the_queue_is_empty(service, user: User):
     await user.should_not_see("The queue is empty.")
 
 
-async def test_queue_redirects_to_the_transcribe_page(service, user: User):
-    await user.open("/queue")
-    await user.should_see(marker="add_to_queue", retries=200)
-
-
 async def test_sidebar_has_no_queue_item(user: User):
     await user.open("/advanced")
     await user.should_see("GPU acceleration", retries=100)
@@ -143,7 +152,9 @@ async def test_locked_queue_disables_add_to_queue(monkeypatch, user: User):
 # --- files and settings ---------------------------------------------------------------
 
 
-async def test_add_to_queue_adds_one_job_per_file(service, known_models, tmp_path, user: User):
+async def test_add_to_queue_adds_one_job_per_file(
+    service, known_models, selections, tmp_path, user: User
+):
     await open_page(user)
     add_button = one(user, "add_to_queue")
     assert not add_button.enabled
@@ -152,7 +163,7 @@ async def test_add_to_queue_adds_one_job_per_file(service, known_models, tmp_pat
     for name in ("one.mp3", "two.mp3"):
         (tmp_path / name).write_bytes(b"audio")
         paths.append(tmp_path / name)
-    selection = one(user, "drop_zone").selection
+    selection = selections[-1]
     selection.add_paths(paths)
     await user.should_see("2 files selected")
     assert add_button.enabled and add_button.text == "Add 2 files to queue"
@@ -170,10 +181,10 @@ async def test_add_to_queue_adds_one_job_per_file(service, known_models, tmp_pat
     await user.should_see("two.mp3")
 
 
-async def test_files_can_be_removed_from_the_selection(service, tmp_path, user: User):
+async def test_files_can_be_removed_from_the_selection(service, selections, tmp_path, user: User):
     await open_page(user)
     paths = [tmp_path / name for name in ("a.mp3", "b.mp3")]
-    selection = one(user, "drop_zone").selection
+    selection = selections[-1]
     selection.add_paths(paths)
     await user.should_see("2 files selected")
     with user.client:
@@ -186,13 +197,13 @@ async def test_files_can_be_removed_from_the_selection(service, tmp_path, user: 
     assert not one(user, "add_to_queue").enabled
 
 
-async def test_a_folder_offers_a_copy_next_to_the_files(service, tmp_path, user: User):
+async def test_a_folder_offers_a_copy_next_to_the_files(service, selections, tmp_path, user: User):
     await open_page(user)
     folder = tmp_path / "recordings"
     folder.mkdir()
     for name in ("a.mp3", "notes.txt"):
         (folder / name).write_text("x")
-    selection = one(user, "drop_zone").selection
+    selection = selections[-1]
     selection.ignored = ignored_files(folder, [folder / "a.mp3"])  # as the folder picker does
     selection.add_paths([folder / "a.mp3"], folder)
 
@@ -257,7 +268,7 @@ async def test_panel_shows_the_running_job(service, tmp_path, user: User):
     add(service, tmp_path, "done", S.RUNNING, S.DONE)
     add(service, tmp_path, "running", S.RUNNING)
     add(service, tmp_path, "queued")
-    service.store.get("running")[1].progress = 0.62
+    service.progress = 0.62
 
     await open_page(user)
 
@@ -272,7 +283,7 @@ async def test_panel_shows_the_running_job(service, tmp_path, user: User):
 async def test_panel_shows_speaker_detection(service, tmp_path, user: User):
     add(service, tmp_path, "a", S.RUNNING, speaker_detection=True)
     service.step = Step.DIARIZATION
-    service.store.get("a")[1].progress = 0.4
+    service.progress = 0.4
 
     await open_page(user)
 
@@ -306,7 +317,7 @@ async def test_stop_is_hidden_while_cancelling(service, tmp_path, user: User):
     await open_page(user)
     await user.should_see("Transcribing", retries=200)
     await user.should_see(marker="stop_job")
-    service.store.get("a")[1].cancelling = True
+    service.cancelling = True
     await user.should_see("Cancelling…", retries=20)
     await user.should_not_see(marker="stop_job")
 
@@ -492,6 +503,7 @@ async def test_several_files_go_to_the_queue(service, tmp_path, user: User):
 
     jobs = service.jobs()
     assert [spec.display_name for spec, _ in jobs] == ["one.mp3", "two.mp3"]
+    assert [spec.source for spec, _ in jobs] == paths  # picked files are used, not copied
     assert all(spec.export_dir == tmp_path / "transcriptions" for spec, _ in jobs)
     await user.should_see("one.mp3", retries=20)
 
@@ -524,7 +536,9 @@ def desktop(monkeypatch):
     monkeypatch.setattr(file_component, "LINUX", True)
 
 
-async def test_dropped_files_are_added_in_the_desktop_app(service, desktop, tmp_path, user: User):
+async def test_dropped_files_are_added_in_the_desktop_app(
+    service, desktop, selections, tmp_path, user: User
+):
     for name in ("a.mp3", "b.mp3"):
         (tmp_path / name).write_bytes(b"audio")
     await open_page(user)
@@ -532,13 +546,13 @@ async def test_dropped_files_are_added_in_the_desktop_app(service, desktop, tmp_
     drop(user, [tmp_path / "a.mp3", tmp_path / "b.mp3", Path("/gone.mp3")])
 
     expected = [tmp_path / "a.mp3", tmp_path / "b.mp3"]
-    await until(lambda: one(user, "drop_zone").selection.paths == expected)
+    await until(lambda: selections[-1].paths == expected)
     await user.should_see("2 files selected")
     await user.should_see("aTrain can't open gone.mp3.")
 
 
 async def test_an_unreadable_drop_in_a_flatpak_opens_the_chooser_there(
-    service, desktop, tmp_path, user: User, monkeypatch
+    service, desktop, selections, tmp_path, user: User, monkeypatch
 ):
     calls = []
     granted = tmp_path / "doc" / "a.mp3"
@@ -554,17 +568,17 @@ async def test_an_unreadable_drop_in_a_flatpak_opens_the_chooser_there(
     drop(user, [Path("/home/me/Downloads/a.mp3")])  # a drag without the portal
 
     await user.should_see("Select a.mp3 to give aTrain access to it.")
-    await until(lambda: one(user, "drop_zone").selection.paths == [granted])
+    await until(lambda: selections[-1].paths == [granted])
     assert calls == [(False, Path("/home/me/Downloads"))]
 
 
-async def test_drops_are_ignored_in_a_browser(service, tmp_path, user: User):
+async def test_drops_are_ignored_in_a_browser(service, selections, tmp_path, user: User):
     (tmp_path / "a.mp3").write_bytes(b"audio")
     await open_page(user)
 
     drop(user, [tmp_path / "a.mp3"])
 
-    assert one(user, "drop_zone").selection.names == []  # paths on the browser's computer
+    assert selections[-1].names == []  # paths on the browser's computer
 
 
 def test_ignored_files(tmp_path):
@@ -586,55 +600,87 @@ async def test_one_file_goes_to_the_queue_without_a_dialog(service, tmp_path, us
     await user.should_not_see(kind=ui.dialog)
 
 
-async def test_failed_upload_batch_cleans_only_new_staging(
-    service, tmp_path, user: User, monkeypatch
+async def test_selection_stays_when_the_jobs_cant_be_added(
+    service, selections, tmp_path, user: User, monkeypatch
 ):
     await open_page(user)
-    app.storage.general.update(CHEAP_SETTINGS)
-    add(service, tmp_path, "existing")
-    previous_upload = service.store.uploads_root / "existing" / "keep.mp3"
-    previous_upload.parent.mkdir(parents=True)
-    previous_upload.write_bytes(b"keep")
-    native_source = tmp_path / "native.mp3"
-    native_source.write_bytes(b"native audio")
+    app.storage.general.update({**CHEAP_SETTINGS, "model": None})  # no model downloaded yet
     errors = []
     monkeypatch.setattr(transcription, "dialog_error", lambda **kw: errors.append(kw))
+    (tmp_path / "a.mp3").write_bytes(b"audio")
+    selection = selections[-1]
+    selection.add_paths([tmp_path / "a.mp3"])
 
-    class Upload:
-        def __init__(self, last=False):
-            self.last = last
-
-        async def save(self, target):
-            target.write_bytes(b"audio")
-            if self.last:
-                raise OSError("disk full")
-
-    payloads = [
-        UploadPayload(name="a.mp3", upload=Upload()),
-        UploadPayload(name=native_source.name, path=native_source),
-        UploadPayload(name="b.mp3", upload=Upload(last=True)),
-    ]
     with user:
-        await start_payloads(payloads)
-    assert "disk full" in errors[0]["error"]
+        await selection.submit()
 
-    assert ids(service) == ["existing"]
-    assert list(service.store.uploads_root.iterdir()) == [previous_upload.parent]
-    assert previous_upload.read_bytes() == b"keep"
-    assert native_source.read_bytes() == b"native audio"
+    assert "Model None is not available" in errors[0]["error"]
+    assert selection.paths == [tmp_path / "a.mp3"] and service.jobs() == []
 
 
-async def test_successful_upload_batch_keeps_staged_files(service, user: User):
+def test_a_cleared_cpu_threads_field_means_the_default(tmp_path):
+    state = {**CHEAP_SETTINGS, "cpu_threads": None}
+    spec = queue_ui.build_spec_from_state(
+        state, job_id="a", source=tmp_path / "a.mp3", display_name="a.mp3"
+    )
+    assert spec.cpu_threads == 0
+
+
+async def test_the_desktop_window_picks_paths(service, selections, tmp_path, user, monkeypatch):
+    """Windows and macOS: the window's own dialog gives paths, so nothing is uploaded."""
+    monkeypatch.setattr(app.native, "main_window", SimpleNamespace(signal_server_shutdown=print))
+    monkeypatch.setattr(file_component, "LINUX", False)
+    monkeypatch.setattr(file_component, "FLATPAK", False)
+
+    async def pick_in_window(folder):
+        return [str(tmp_path / "a.mp3")]
+
+    monkeypatch.setattr(file_selection, "pick_in_window", pick_in_window)
+    await open_page(user)
+
+    with user:
+        await selections[-1].browse_files()
+
+    assert selections[-1].paths == [tmp_path / "a.mp3"]
+    assert not any(service.store.uploads_root.glob("*"))
+
+
+async def test_browser_files_are_uploaded_when_added(service, selections, user: User):
     await open_page(user)
     app.storage.general.update(CHEAP_SETTINGS)
-    payloads = [
-        UploadPayload(
-            name=name,
-            upload=ui.upload.SmallFileUpload(name, "audio/mpeg", b"audio"),
-        )
-        for name in ("a.mp3", "b.mp3")
-    ]
+    selection = selections[-1]
+    files = [ui.upload.SmallFileUpload(name, "audio/mpeg", b"audio") for name in "abc"]
+
     with user:
-        await start_payloads(payloads)
-    assert [spec.display_name for spec, _ in service.jobs()] == ["a.mp3", "b.mp3"]
-    assert all(spec.source.read_bytes() == b"audio" for spec, _ in service.jobs())
+        await selection.uploaded(SimpleNamespace(files=files))
+    staged = list(selection.paths)
+    selection.remove(0)  # deletes its uploaded copy
+    assert not staged[0].parent.exists()
+    with user:
+        await selection.submit()
+
+    jobs = service.jobs()
+    assert [spec.display_name for spec, _ in jobs] == ["b", "c"]
+    assert [spec.source for spec, _ in jobs] == staged[1:]
+    assert all(spec.source.parent.name == spec.id for spec, _ in jobs)  # removed with the job
+    assert selection.paths == [] and selection.uploads == set()
+
+
+async def test_a_failed_upload_keeps_the_files_before_it(service, selections, user: User):
+    await open_page(user)
+    selection = selections[-1]
+
+    class Broken:
+        name = "b.mp3"
+
+        async def save(self, target):
+            target.write_bytes(b"part")
+            raise OSError("disk full")
+
+    good = ui.upload.SmallFileUpload("a.mp3", "audio/mpeg", b"audio")
+    with user:
+        await selection.uploaded(SimpleNamespace(files=[good, Broken()]))
+
+    await user.should_see("The upload failed: disk full")
+    assert selection.names == ["a.mp3"] and not selection.uploading
+    assert list(service.store.uploads_root.iterdir()) == [selection.paths[0].parent]

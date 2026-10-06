@@ -14,7 +14,6 @@ from collections.abc import Callable
 from datetime import datetime
 from traceback import format_exc
 
-from aTrain_core import outputs
 from aTrain_core.globals import TIMESTAMP_FORMAT
 from aTrain_core.jobs import (
     FINAL_STATUSES,
@@ -28,7 +27,6 @@ from aTrain_core.jobs import (
 from aTrain_core.runner import (
     JobDone,
     JobFailed,
-    JobFileId,
     JobProgress,
     PhaseDied,
     PhaseError,
@@ -58,10 +56,11 @@ class QueueService:
         self._stopping = False
         # the running phase
         self.step = Step.TRANSCRIPTION  # what the running child does
+        self.progress = 0.0  # of the running child, 0 to 1
+        self.cancelling = False  # the running job is being cancelled
         self._handle: PhaseHandle | None = None
         self._in_flight: str | None = None
         self._phase_error: PhaseError | None = None
-        self._cancel_requested: set[str] = set()
 
     # --- lifecycle --------------------------------------------------------------------
 
@@ -73,6 +72,11 @@ class QueueService:
         for spec, state in self.store.jobs():
             if state.status == JobStatus.RUNNING:
                 self._guarded(spec.id, self._resume, spec.id)
+        # files uploaded on a page that was closed before they were added to the queue
+        job_ids = {spec.id for spec, _ in self.store.jobs()}
+        for folder in self.store.uploads_root.glob("*"):
+            if folder.name not in job_ids:
+                shutil.rmtree(folder, ignore_errors=True)
         self._scheduler_task = asyncio.create_task(self._scheduler())
         self._wake.set()
 
@@ -108,8 +112,7 @@ class QueueService:
                 continue
             # The child is killed; events it sent before are still applied, so a job
             # that has just finished stays DONE (a just transcribed one is CANCELLED).
-            self._cancel_requested.add(job_id)
-            state.cancelling = True
+            self.cancelling = True
             handle = self._handle
         # Cancel every waiting entry before yielding to the scheduler, and kill only
         # the child captured above even if the scheduler advances while we await it.
@@ -183,15 +186,14 @@ class QueueService:
         try:
             if not (await self._run_phase(Step.TRANSCRIPTION, spec) and spec.speaker_detection):
                 return
-            if spec.id in self._cancel_requested:  # transcribed just before the kill
+            if self.cancelling:  # transcribed just before the kill
                 self._guarded(spec.id, self.store.update, spec.id, status=JobStatus.CANCELLED)
-                self._finish(spec.id)
             elif self.paused or self._stopping:
                 self._guarded(spec.id, self.store.update, spec.id, status=JobStatus.QUEUED)
             else:
                 await self._run_phase(Step.DIARIZATION, spec)
         finally:
-            self._cancel_requested.clear()
+            self.cancelling = False
 
     async def _run_phase(self, step: Step, spec: JobSpec) -> bool:
         """Run one child for the job. True if it ended without a result or a crash: it did
@@ -203,7 +205,7 @@ class QueueService:
                 return False
             started_at = self.store.get(spec.id)[1].started_at or _now()
             self.store.update(spec.id, status=JobStatus.RUNNING, started_at=started_at)
-            self.store.get(spec.id)[1].progress = 0.0  # each phase reports from 0
+            self.progress = 0.0  # each phase reports from 0
             self.step = step
             self._in_flight = spec.id
             job = PhaseJob(spec, started_at, self.store.work_dir(spec.id))
@@ -231,24 +233,21 @@ class QueueService:
         elif getattr(event, "job_id", None) != self._in_flight:
             log.debug("Dropped event for a job that isn't in flight: %r", event)
         elif isinstance(event, JobProgress):
-            self.store.get(event.job_id)[1].progress = event.current / (event.total or 1)
-        elif isinstance(event, JobFileId):
-            self.store.update(event.job_id, file_id=event.file_id)
+            self.progress = event.current / (event.total or 1)
         elif isinstance(event, JobDone):
             self._in_flight = None
             self.store.update(
                 event.job_id,
                 status=JobStatus.DONE,
+                file_id=event.file_id,
                 audio_duration=event.audio_duration,
                 warnings=list(event.warnings),
                 finished_at=_now(),
             )
             shutil.rmtree(self.store.work_dir(event.job_id), ignore_errors=True)
             shutil.rmtree(self.store.uploads_root / event.job_id, ignore_errors=True)
-            self._finish(event.job_id)
         elif isinstance(event, JobFailed):
             self._in_flight = None
-            self._drop_incomplete_output(event.job_id)
             self._fail(event.job_id, event.step, event.error, event.traceback)
 
     def _phase_died(self, exitcode: int | None) -> None:
@@ -258,25 +257,19 @@ class QueueService:
         traceback = self._phase_error.traceback if self._phase_error else None
         job_id, self._in_flight = self._in_flight, None
         if job_id is not None:
-            _, state = self.store.get(job_id)
-            state.cancelling = False
-            step = Step.OUTPUT if state.file_id is not None else self.step
-            self._drop_incomplete_output(job_id)
-            if job_id in self._cancel_requested:
+            if self.cancelling:
                 self.store.update(job_id, status=JobStatus.CANCELLED)
-                self._finish(job_id)
             elif self._stopping:
                 self._resume(job_id)
             else:
                 message = f"Processing stopped unexpectedly (possibly out of memory): {reason}"
-                self._fail(job_id, step, message, traceback)
+                self._fail(job_id, self.step, message, traceback)
 
     # --- helpers ----------------------------------------------------------------------
 
     def _resume(self, job_id: str) -> None:
         """Back into the queue after a stop, a restart or a retry. The checkpoints stay, so
         finished work is reused."""
-        self._drop_incomplete_output(job_id)
         self.store.update(job_id, status=JobStatus.QUEUED)
 
     def _fail(self, job_id: str, step: Step, error: str, traceback: str | None = None) -> None:
@@ -297,18 +290,6 @@ class QueueService:
             )
             state.traceback = traceback
             log.exception("Could not save failure for job %s; queue paused", job_id)
-        self._finish(job_id)
-
-    def _finish(self, job_id: str) -> None:
-        self.store.get(job_id)[1].cancelling = False
-
-    def _drop_incomplete_output(self, job_id: str) -> None:
-        """A job that has an archive folder but isn't DONE was interrupted while writing its
-        outputs: delete the folder, so the archive only holds finished transcriptions."""
-        _, state = self.store.get(job_id)
-        if state.file_id is not None and state.status != JobStatus.DONE:
-            shutil.rmtree(outputs.TRANSCRIPT_DIR / state.file_id, ignore_errors=True)
-            self.store.update(job_id, file_id=None)
 
     def _guarded(self, job_id: str | None, action: Callable, *args, **kwargs) -> None:
         """Run a state change; an unexpected error fails only that job, never the scheduler."""

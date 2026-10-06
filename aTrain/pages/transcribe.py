@@ -6,13 +6,7 @@ from aTrain.components.settings.model import input_model
 from aTrain.components.settings.speakers import input_speakers
 from aTrain.components.splash_screen import splash_screen
 from aTrain.layouts.base import base_layout
-from fastapi.responses import RedirectResponse
 from nicegui import Client, ui
-
-
-@ui.page("/queue")
-def queue_page():
-    return RedirectResponse("/")  # the queue is on the transcribe page now
 
 
 @ui.page("/")

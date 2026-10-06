@@ -25,8 +25,10 @@ from werkzeug.utils import secure_filename
 from aTrain_core.engine import backend_of, decode, diarize
 from aTrain_core.jobs import JobSpec, Step
 from aTrain_core.outputs import (
-    claim_file_id,
+    free_file_id,
+    fresh_output_dir,
     make_logger,
+    publish,
     read_checkpoint,
     write_checkpoint,
     write_final_outputs,
@@ -57,14 +59,9 @@ class JobProgress:
 
 
 @dataclass(frozen=True, slots=True)
-class JobFileId:
-    job_id: str
-    file_id: str
-
-
-@dataclass(frozen=True, slots=True)
 class JobDone:
     job_id: str
+    file_id: str  # the archive folder
     audio_duration: int
     warnings: list[str] = field(default_factory=list)
 
@@ -258,8 +255,8 @@ def _run_phase2_job(load: Callable, job: PhaseJob, channel: Channel) -> None:
 
 
 def _write_outputs(channel: Channel, job: PhaseJob, transcript: dict, duration: int, backend: str):
-    file_id = claim_file_id(Path(secure_filename(job.spec.display_name)), job.timestamp)
-    channel.send(JobFileId(job.spec.id, file_id))
+    file_id = free_file_id(Path(secure_filename(job.spec.display_name)), job.timestamp)
+    directory = fresh_output_dir(file_id)
     warnings = write_final_outputs(
         job.spec.to_settings(file_id=file_id, timestamp=job.timestamp, progress={}),
         transcript,
@@ -267,8 +264,10 @@ def _write_outputs(channel: Channel, job: PhaseJob, transcript: dict, duration: 
         backend=backend,
         work_log=job.work_dir / WORK_LOG,
         export_dir=job.spec.export_dir,
+        directory=directory,
     )
-    channel.send(JobDone(job.spec.id, duration, warnings))
+    publish(directory)
+    channel.send(JobDone(job.spec.id, file_id, duration, warnings))
 
 
 def _fail(channel: Channel, job: PhaseJob, step: Step, error: Exception, log) -> None:

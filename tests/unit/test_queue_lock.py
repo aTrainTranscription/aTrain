@@ -17,11 +17,19 @@ time.sleep(60)
 """
 
 
+def acquire_and_release(root):
+    lock = QueueLock(root)
+    lock.acquire()
+    lock.release()
+
+
 def test_second_lock_in_same_process_fails(tmp_path):
-    with QueueLock(tmp_path), pytest.raises(QueueLockedError):
+    first = QueueLock(tmp_path)
+    first.acquire()
+    with pytest.raises(QueueLockedError):
         QueueLock(tmp_path).acquire()
-    with QueueLock(tmp_path):
-        pass
+    first.release()
+    acquire_and_release(tmp_path)
 
 
 def test_lock_held_by_other_process_until_it_dies(tmp_path):
@@ -35,5 +43,4 @@ def test_lock_held_by_other_process_until_it_dies(tmp_path):
     finally:
         holder.kill()
         holder.wait(10)
-    with QueueLock(tmp_path):
-        pass
+    acquire_and_release(tmp_path)

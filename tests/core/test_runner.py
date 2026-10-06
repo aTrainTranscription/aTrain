@@ -91,8 +91,8 @@ def test_phase1_writes_outputs_for_jobs_without_speaker_detection(env):
     runner.run_phase1(job, channel, lambda key: FakeTranscriber())
 
     kinds = [type(e) for e in channel.events if not isinstance(e, runner.JobProgress)]
-    assert kinds == [runner.JobFileId, runner.JobDone]
-    file_id = channel.of(runner.JobFileId)[0].file_id
+    assert kinds == [runner.JobDone]
+    file_id = channel.of(runner.JobDone)[0].file_id
     directory = tmp_path / "transcriptions" / file_id
     assert (
         (directory / "transcription.txt")
@@ -130,7 +130,7 @@ def test_speaker_detection_goes_through_both_phases(env):
     runner.run_phase2(job, phase2, lambda device: "pipeline")
 
     assert len(diarized) == 1 and (job.work_dir / runner.DIARIZED_CHECKPOINT).is_file()
-    file_id = phase2.of(runner.JobFileId)[0].file_id
+    file_id = phase2.of(runner.JobDone)[0].file_id
     text = (tmp_path / "transcriptions" / file_id / "transcription.txt").read_text(encoding="utf-8")
     assert "SPEAKER_00" in text
 
@@ -168,6 +168,25 @@ def test_output_error_keeps_checkpoints(env, monkeypatch):
     assert [(f.step, f.error) for f in channel.of(runner.JobFailed)] == [(Step.OUTPUT, "disk full")]
     assert (job.work_dir / runner.RAW_CHECKPOINT).is_file()
     assert (job.work_dir / runner.DIARIZED_CHECKPOINT).is_file()
+
+
+def test_interrupted_output_writing_leaves_the_archive_untouched(env, monkeypatch):
+    tmp_path, _ = env
+    archive = tmp_path / "transcriptions"
+    job = make_job(tmp_path, "a", speaker_detection=False)
+    transcriber = FakeTranscriber()
+
+    def broken(directory):
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(outputs, "add_processing_time_to_metadata", broken)  # most files exist
+        runner.run_phase1(job, FakeChannel(), lambda key: transcriber)
+    assert list(archive.glob("[!.]*")) == []  # only the hidden .pending folder
+
+    channel = FakeChannel()
+    runner.run_phase1(job, channel, lambda key: transcriber)  # the retry replaces the rest
+    assert [p.name for p in archive.glob("[!.]*")] == [channel.of(runner.JobDone)[0].file_id]
 
 
 def test_phase2_with_changed_source_fails_without_diarizing(env):

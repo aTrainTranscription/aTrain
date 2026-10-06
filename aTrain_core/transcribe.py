@@ -24,7 +24,6 @@ import pyannote.audio  # noqa: F401
 from werkzeug.utils import secure_filename
 
 from aTrain_core import engine
-from aTrain_core.engine import transcription_with_progress_bar  # noqa: F401  public name
 from aTrain_core.globals import TIMESTAMP_FORMAT
 from aTrain_core.load_resources import get_model
 from aTrain_core.outputs import (

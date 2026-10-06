@@ -7,11 +7,12 @@ boot-serve smoke.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import aTrain_core.transcribe  # noqa: F401  pre-import so the splash import is instant
-from aTrain.utils import transcription
-from aTrain.utils.transcription import start_paths, start_uploads
+from aTrain.utils import queue_ui
+from aTrain.utils.transcription import stage_upload, start_paths
 from nicegui import app, events, ui
 from nicegui.testing import User
 
@@ -42,7 +43,7 @@ async def test_transcribe_through_ui(user: User):
     # The UI settings components write into app.storage.general; set them
     # directly to force the cheap path (tiny model, CPU) over the UI default.
     app.storage.general.update(CHEAP_SETTINGS)
-    # start_uploads is exactly what the upload handler calls. Build a *real*
+    # stage_upload is exactly what the upload handler calls. Build a *real*
     # MultiUploadEventArguments rather than a stand-in: a hand-rolled double
     # freezes whatever attribute names NiceGUI happened to use when it was
     # written, so an upload-API change (2.x `.name`/`.content` -> 3.x `.file`)
@@ -59,12 +60,12 @@ async def test_transcribe_through_ui(user: User):
         ],
     )
     with user:
-        await start_uploads(upload_event)
+        await start_paths([await stage_upload(file) for file in upload_event.files])
     await user.open("/")
     await user.should_see("Done", retries=600)
 
 
-async def test_large_upload_is_staged_from_disk(tmp_path):
+async def test_large_upload_is_staged_from_disk(tmp_path, monkeypatch):
     """The streaming branch, which is the normal one for real recordings.
 
     NiceGUI hands over a `LargeFileUpload` (a temp file it streamed to) rather
@@ -75,44 +76,16 @@ async def test_large_upload_is_staged_from_disk(tmp_path):
     """
     source = tmp_path / "upload.tmp"
     source.write_bytes(FIXTURE.read_bytes())
-    payload = transcription.UploadPayload(
-        name="recording.mp3",
-        upload=ui.upload.LargeFileUpload(
-            name="recording.mp3", content_type="audio/mpeg", _path=source
-        ),
+    store = SimpleNamespace(uploads_root=tmp_path / "uploads")
+
+    async def service():
+        return SimpleNamespace(store=store)
+
+    monkeypatch.setattr(queue_ui, "get_queue_service", service)
+
+    staged = await stage_upload(
+        ui.upload.LargeFileUpload(name="recording.mp3", content_type="audio/mpeg", _path=source)
     )
 
-    staged = await payload.materialise(tmp_path / "staging", "recording.mp3")
-
     assert staged.read_bytes() == FIXTURE.read_bytes()
-    assert staged != source
-
-
-async def test_picked_path_reaches_the_pipeline_unchanged(monkeypatch):
-    """Native-picker path (Linux/Flatpak): Add to queue hands us a path.
-
-    This second entry point bypasses NiceGUI's upload entirely. CI runs on
-    Linux, where `transcribe.py` wires *only* this branch - so without a test
-    here the picker adapter is unexercised on Windows and the upload adapter
-    is unexercised on CI, and a mismatched payload breaks whichever platform
-    nobody happened to run.
-
-    Only the adapter is checked: everything downstream of `start_payloads`
-    is the same code the upload test already drives end to end, and a second
-    real transcription would double the `e2e (app)` job for no added coverage.
-    """
-    captured: list[transcription.UploadPayload] = []
-
-    async def capture(payloads: list[transcription.UploadPayload], export_dir=None) -> None:
-        captured.extend(payloads)
-
-    monkeypatch.setattr(transcription, "start_payloads", capture)
-    await start_paths([FIXTURE])
-
-    (payload,) = captured
-    assert payload.name == FIXTURE.name
-    assert payload.path == FIXTURE
-    assert payload.upload is None
-    # A file the picker already gave us must be handed on as-is, not copied
-    # into the staging directory.
-    assert await payload.materialise(Path("unused"), "unused.mp3") == FIXTURE
+    assert staged.name == "recording.mp3" and staged.parent.parent == store.uploads_root

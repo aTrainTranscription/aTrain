@@ -43,8 +43,7 @@ class JobSpec:
 
     @property
     def model_key(self) -> ModelKey:
-        cpu_threads = 0 if self.device == Device.GPU else self.cpu_threads
-        return ModelKey(self.model, self.device, self.compute_type, cpu_threads)
+        return ModelKey(self.model, self.device, self.compute_type, self.cpu_threads)
 
     def to_settings(self, *, file_id: str, timestamp: str, progress) -> Settings:
         return Settings(
@@ -74,8 +73,7 @@ class JobSpec:
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "JobSpec":
-        _reject_unknown_keys(cls, data)
-        return cls(
+        return cls(  # unknown keys raise TypeError
             **{
                 **data,
                 "source": Path(data["source"]),
@@ -108,7 +106,7 @@ class JobState:
     """Where the job is. Owned by the queue service."""
 
     status: JobStatus = JobStatus.QUEUED
-    file_id: str | None = None  # archive folder; cleared if the job doesn't reach DONE
+    file_id: str | None = None  # archive folder, once DONE
     started_at: str | None = None  # metadata timestamp of the current run
     finished_at: str | None = None
     audio_duration: int | None = None
@@ -116,33 +114,22 @@ class JobState:
     error: str | None = None
     traceback: str | None = None
     warnings: list[str] = field(default_factory=list)
-    # memory only, never written:
-    progress: float = 0.0
-    cancelling: bool = False
 
     def to_json(self) -> dict[str, Any]:
         data = {f.name: getattr(self, f.name) for f in fields(self)}
-        del data["progress"], data["cancelling"]
         data["warnings"] = list(self.warnings)
         return data
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "JobState":
-        _reject_unknown_keys(cls, data, memory_only={"progress", "cancelling"})
         failed_step = data.get("failed_step")
-        return cls(
+        return cls(  # unknown keys raise TypeError
             **{
                 **data,
                 "status": JobStatus(data["status"]),
                 "failed_step": Step(failed_step) if failed_step else None,
             }
         )
-
-
-def _reject_unknown_keys(cls, data: dict, memory_only: set[str] = frozenset()) -> None:
-    unknown = (data.keys() - {f.name for f in fields(cls)}) | (data.keys() & memory_only)
-    if unknown:
-        raise ValueError(f"Unknown {cls.__name__} keys: {sorted(unknown)}")
 
 
 class JobStore:
@@ -177,8 +164,7 @@ class JobStore:
         return list(self._jobs)
 
     def update(self, job_id: str, **changes) -> JobState:
-        """Change saved state fields. `progress` and `cancelling` are memory only; set them on
-        the state directly."""
+        """Change saved state fields."""
         index = self._index(job_id)
         spec, state = self._jobs[index]
         jobs = self._jobs.copy()
@@ -206,14 +192,13 @@ class JobStore:
         self._jobs = jobs
         self._delete_files(job_id)
 
-    def clear_finished(self) -> list[str]:
+    def clear_finished(self) -> None:
         finished = [spec.id for spec, state in self._jobs if state.status in FINAL_STATUSES]
         jobs = [job for job in self._jobs if job[1].status not in FINAL_STATUSES]
         self._save(jobs)
         self._jobs = jobs
         for job_id in finished:
             self._delete_files(job_id)
-        return finished
 
     def _delete_files(self, job_id: str) -> None:
         shutil.rmtree(self.work_dir(job_id), ignore_errors=True)
@@ -284,10 +269,3 @@ class QueueLock:
 
     def release(self) -> None:
         self._lock.release()
-
-    def __enter__(self) -> "QueueLock":
-        self.acquire()
-        return self
-
-    def __exit__(self, *exc) -> None:
-        self.release()

@@ -55,7 +55,9 @@ async def _stop() -> None:
         await service.stop()
 
 
-def build_spec_from_state(state: dict, *, job_id: str, source: Path, display_name: str) -> JobSpec:
+def build_spec_from_state(
+    state: dict, *, job_id: str, source: Path, display_name: str, export_dir: Path | None = None
+) -> JobSpec:
     """A job with the settings of the transcribe page (a snapshot of app.storage.general)."""
     device = Device.GPU if state.get("GPU") else Device.CPU
     return JobSpec(
@@ -66,9 +68,10 @@ def build_spec_from_state(state: dict, *, job_id: str, source: Path, display_nam
         language=state["language"],
         device=device,
         compute_type=ComputeType(state["compute_type"]),
-        cpu_threads=int(state.get("cpu_threads", 0)) or 0,
+        cpu_threads=int(state.get("cpu_threads") or 0),  # None: the field was cleared
         temperature=state.get("temperature_override"),
         initial_prompt=state.get("initial_prompt") or None,
         speaker_detection=bool(state.get("speaker_detection")),
         speaker_count=int(state.get("speaker_count") or 0) or None,
+        export_dir=export_dir,
     )

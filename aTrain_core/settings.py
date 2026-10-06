@@ -23,12 +23,12 @@ class ComputeType(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ModelKey:
-    """What decides which Whisper model is loaded. Jobs with the same key share one model."""
+    """What decides how the Whisper model is loaded."""
 
     model: str
     device: Device
     compute_type: ComputeType
-    cpu_threads: int  # 0 for GPU, so GPU keys group together
+    cpu_threads: int
 
 
 @dataclass

@@ -20,7 +20,11 @@ def read_archive() -> list:
 def read_directories() -> list:
     """A function that returns a list of all directories in the archive folder"""
     os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
-    directories = [directory.name for directory in os.scandir(TRANSCRIPT_DIR) if directory.is_dir()]
+    directories = [
+        directory.name
+        for directory in os.scandir(TRANSCRIPT_DIR)
+        if directory.is_dir() and not directory.name.startswith(".")  # .pending: unfinished
+    ]
     directories.sort(reverse=True)
     return directories
 

@@ -1,6 +1,7 @@
 """The files picked or dropped for the next jobs, behind the drop zone of the transcribe page."""
 
 import os
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,15 +12,16 @@ from nicegui import app, events, run, ui
 
 
 class FileSelection:
-    """The files for the next jobs: paths on disk (native pickers, a folder, drops in the
-    Linux window) and browser files waiting in the hidden uploader, which uploads them when
-    they are added. `portal`: pick with the desktop portal (Linux window), which gives paths."""
+    """The files for the next jobs, as paths: picked, a folder, dropped in the Linux window,
+    or browser files, which the hidden uploader uploads into the queue's upload folder as
+    soon as they are added. `native`: a desktop window, whose dialogs give paths
+    (`portal`: through the desktop portal, in the Linux window)."""
 
-    def __init__(self, uploader: ui.upload, portal: bool):
+    def __init__(self, uploader: ui.upload, native: bool, portal: bool):
         self.uploader = uploader
-        self.portal = portal
+        self.native, self.portal = native, portal
         self.paths: list[Path] = []
-        self.uploads: list[str] = []  # names of the uploader's files, in its order
+        self.uploads: set[Path] = set()  # paths of uploaded files, deleted when unselected
         self.folder: Path | None = None  # the picked folder, while its files are selected
         self.ignored = 0  # files in the folder that aren't media files
         self.export = False  # also save a copy in <folder>/transcriptions
@@ -28,7 +30,7 @@ class FileSelection:
 
     @property
     def names(self) -> list[str]:
-        return [path.name for path in self.paths] + self.uploads
+        return [path.name for path in self.paths]
 
     @property
     def export_dir(self) -> Path | None:
@@ -54,46 +56,61 @@ class FileSelection:
             self.add_paths(files, folder_path)
 
     def remove(self, index: int) -> None:
-        if index < len(self.paths):
-            del self.paths[index]
-            if not self.paths:
-                self.folder = None
-            self.on_change()
-        else:  # the uploader reports the change back (set_uploads)
-            ui.run_javascript(
-                f"const u = getElement({self.uploader.id}).$refs.qRef; "
-                f"u.removeFile(u.files[{index - len(self.paths)}]);"
-            )
-
-    def set_uploads(self, names: list[str]) -> None:
-        self.uploads = names
-        self.folder = None if names else self.folder
+        self._discard(self.paths.pop(index))
+        if not self.paths:
+            self.folder = None
         self.on_change()
 
     def clear(self) -> None:
-        self.paths, self.uploads, self.folder = [], [], None
-        self.uploader.reset()  # reports no change back
+        for path in self.paths:
+            self._discard(path)
+        self.paths, self.folder = [], None
         self.on_change()
 
-    # --- picking and dropping -----------------------------------------------------------
+    def _discard(self, path: Path) -> None:
+        if path in self.uploads:
+            self.uploads.discard(path)
+            shutil.rmtree(path.parent, ignore_errors=True)
+
+    # --- picking, uploading and dropping ------------------------------------------------
 
     async def browse_files(self) -> None:
-        if not self.portal:
+        if not self.native:
             self.uploader.run_method("pickFiles")
             return
-        # The portal call blocks; run it in a thread so the UI stays connected.
-        picked = await run.io_bound(pick_native, False)
-        self.add_paths([Path(p) for p in picked])
+        self.add_paths([Path(p) for p in await self._pick(folder=False)])
 
     async def browse_folder(self) -> None:
-        if self.portal:
-            picked = await run.io_bound(pick_native, True)
-            self.add_folder(picked[0] if picked else None)
-            return
-        import webview  # type: ignore
+        picked = await self._pick(folder=True)
+        self.add_folder(picked[0] if picked else None)
 
-        result = await app.native.main_window.create_file_dialog(webview.FileDialog.FOLDER)
-        self.add_folder(result[0] if result else None)
+    async def _pick(self, folder: bool) -> list[str]:
+        if self.portal:  # the portal call blocks; in a thread so the UI stays connected
+            return await run.io_bound(pick_native, folder)
+        return await pick_in_window(folder)
+
+    def upload_started(self) -> None:
+        self.uploading = True
+        self.on_change()
+
+    async def uploaded(self, event: events.MultiUploadEventArguments) -> None:
+        from aTrain.utils.transcription import stage_upload
+
+        paths = []
+        try:
+            for file in event.files:
+                paths.append(await stage_upload(file))
+        except Exception as e:
+            ui.notify(f"The upload failed: {e}", color="negative", multi_line=True)
+        finally:
+            self.uploads.update(paths)
+            self.uploading = False
+            self.add_paths(paths)
+
+    def upload_failed(self) -> None:
+        ui.notify("The upload failed. Please try again.", color="negative")
+        self.uploading = False
+        self.on_change()
 
     async def add_dropped(self, event: events.GenericEventArguments) -> None:
         """The paths of a drop in the Linux window (see aTrain.utils.linux_drop)."""
@@ -117,34 +134,13 @@ class FileSelection:
     # --- adding the jobs ----------------------------------------------------------------
 
     async def submit(self) -> None:
-        """Add one job per file. Picked paths go to the queue at once; browser files are
-        uploaded first (`uploaded` runs when the upload is done)."""
+        """Add one job per file. The selection stays if they can't be added."""
         from aTrain.utils.transcription import start_paths
 
-        if self.paths:
-            paths, export_dir = self.paths, self.export_dir
-            self.paths, self.folder = [], None
-            await start_paths(paths, export_dir)
-        if self.uploads:
-            self.uploading = True
-            self.uploader.run_method("upload")
-        self.on_change()
-
-    async def uploaded(self, event: events.MultiUploadEventArguments) -> None:
-        from aTrain.utils.transcription import start_uploads
-
-        try:
-            await start_uploads(event)
-        finally:
-            self.upload_done()
-
-    def upload_failed(self) -> None:
-        ui.notify("The upload failed. Please try again.", color="negative")
-        self.upload_done()
-
-    def upload_done(self) -> None:
-        self.uploading = False
-        self.on_change()
+        if await start_paths(self.paths, self.export_dir):
+            # the uploaded files now belong to their jobs
+            self.paths, self.uploads, self.folder = [], set(), None
+            self.on_change()
 
 
 def check_dropped(paths: list[Path]) -> tuple[list[Path], list[Path], list[str]]:
@@ -170,6 +166,20 @@ def ignored_files(folder: Path, files: list[Path]) -> int:
     """The visible files in the folder that aren't supported media files."""
     visible = sum(1 for p in folder.iterdir() if p.is_file() and not p.name.startswith("."))
     return visible - len(files)
+
+
+async def pick_in_window(folder: bool) -> list[str]:
+    """The dialog of the desktop window (Windows, macOS), which returns paths."""
+    import webview  # type: ignore
+
+    if folder:
+        result = await app.native.main_window.create_file_dialog(webview.FileDialog.FOLDER)
+    else:
+        types = "Audio and video files (" + ";".join("*" + ext for ext in load_formats()) + ")"
+        result = await app.native.main_window.create_file_dialog(
+            webview.FileDialog.OPEN, allow_multiple=True, file_types=(types,)
+        )
+    return list(result or [])
 
 
 def pick_native(directory: bool, folder: Path | None = None) -> list[str]:

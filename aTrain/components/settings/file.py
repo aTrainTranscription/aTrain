@@ -20,19 +20,17 @@ def input_file(on_change) -> FileSelection:
     """The drop zone: drop or browse files, or (in a native window) pick a folder.
     `on_change` runs whenever the selection changes."""
     allowed_files = "".join(x for x in str(load_formats()) if x not in "[]'")
-    uploader = ui.upload(multiple=True).classes("hidden")
+    uploader = ui.upload(multiple=True, auto_upload=True).classes("hidden")
     uploader.props(f"accept='{allowed_files}' batch")
     native = app.native.main_window is not None
     portal = (FLATPAK or LINUX) and native
-    selection = FileSelection(uploader, portal)
+    selection = FileSelection(uploader, native, portal)
     qref = f"getElement({uploader.id}).$refs.qRef"
-    names_js = f"() => emit({qref}.files.map(f => f.name))"
-    uploader.on("added", lambda e: selection.set_uploads(e.args), js_handler=names_js)
-    uploader.on("removed", lambda e: selection.set_uploads(e.args), js_handler=names_js)
     uploader.on_rejected(lambda: ui.notify("Only audio and video files can be added"))
-    # sent: the files leave the selection (this reports back through "removed")
-    uploader.on("uploaded", js_handler=f"() => {qref}.removeUploadedFiles()")
+    uploader.on_begin_upload(selection.upload_started)
     uploader.on_multi_upload(selection.uploaded)
+    # sent: the uploader forgets them, so the same file can be added again
+    uploader.on("uploaded", js_handler=f"() => {qref}.removeUploadedFiles()")
     uploader.on("failed", selection.upload_failed, args=[])
 
     zone = ui.element("div").classes(
@@ -56,17 +54,17 @@ def input_file(on_change) -> FileSelection:
 
         ui.on(EVENT, selection.add_dropped)
     zone.mark("drop_zone")
-    zone.selection = selection  # type: ignore[attr-defined]  # for the tests
 
     @ui.refreshable
     def content():
         names = selection.names
-        if not names:
+        if not names and not selection.uploading:
             empty_state(native, selection)
             return
         with ui.column().classes("flex-1 w-full p-3 gap-1.5 no-wrap"):
             with ui.row().classes("w-full justify-between items-center px-2 pb-1.5"):
                 count = f"{len(names)} file{'s' if len(names) != 1 else ''} selected"
+                count = count if names else "Uploading…"
                 ui.label(count).classes("text-[13px] font-medium text-gray-600")
                 if not selection.uploading:
                     clear = ui.label("Clear").classes(
@@ -85,7 +83,8 @@ def input_file(on_change) -> FileSelection:
                                 icon="close", on_click=lambda i=index: selection.remove(i)
                             ).props("flat round dense size=sm color=grey")
             if selection.uploading:
-                ui.label("Uploading…").classes("px-2 pt-1 text-[13px] text-gray-600")
+                if names:
+                    ui.label("Uploading…").classes("px-2 pt-1 text-[13px] text-gray-600")
                 return
             if selection.folder is not None:
                 folder_options(selection, selection.folder)

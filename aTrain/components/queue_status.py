@@ -307,11 +307,11 @@ def queue_status(service):
         diarizing = service.step == Step.DIARIZATION
         steps = 2 if spec.speaker_detection else 1
         step = 2 if diarizing else 1
-        if state.cancelling:
+        if service.cancelling:
             task = "Cancelling…"
         else:
             task = "Detecting speakers" if diarizing else "Transcribing"
-        progress = min(state.progress, 1.0)
+        progress = min(service.progress, 1.0)
         name.text = spec.display_name
         details.text = " · ".join(
             filter(
@@ -325,7 +325,7 @@ def queue_status(service):
             )
         )
         percent.text, bar.value = f"{int(progress * 100)}%", progress
-        stop.set_visibility(not state.cancelling)
+        stop.set_visibility(not service.cancelling)
 
     update()
     ui.timer(0.5, update)

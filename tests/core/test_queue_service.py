@@ -6,19 +6,19 @@ import sys
 
 import pytest
 from aTrain_core import outputs
-from aTrain_core.jobs import JobStatus, JobStore, QueueLock, QueueLockedError, Step
+from aTrain_core.jobs import JobStatus, JobStore, QueueLockedError, Step
 from aTrain_core.queue_service import QueueService
 from aTrain_core.runner import (
     RAW_CHECKPOINT,
     JobDone,
     JobFailed,
-    JobFileId,
     JobProgress,
     PhaseDied,
     PhaseFinished,
 )
 from aTrain_core.settings import ComputeType, Device
 from tests.unit.test_jobs import make_spec
+from tests.unit.test_queue_lock import acquire_and_release
 
 
 class FakeHandle:
@@ -58,8 +58,7 @@ class FakeHandle:
         else:
             file_id = f"{job_id}-archive"
             (outputs.TRANSCRIPT_DIR / file_id).mkdir(parents=True)
-            yield JobFileId(job_id, file_id)
-            yield JobDone(job_id, 5, [])
+            yield JobDone(job_id, file_id, 5, [])
         # events sent before a kill still arrive
         killed = self.killed.is_set() and job_id not in launcher.exited_before_kill
         yield PhaseDied(-9) if killed else PhaseFinished()
@@ -260,7 +259,7 @@ async def test_cancel_the_running_job(started):
     await service.cancel(["a"])
     await settle(service)
 
-    assert status(store, "a") == JobStatus.CANCELLED and not store.get("a")[1].cancelling
+    assert status(store, "a") == JobStatus.CANCELLED and not service.cancelling
     assert status(store, "b") == JobStatus.DONE
     assert len(launcher.launches) == 2  # b ran in a new child
 
@@ -284,26 +283,12 @@ async def test_job_that_finished_before_the_kill_stays_done(started):
     await until(lambda: launcher.dispatched() == ["a"])
 
     await service.cancel(["a"])  # the kill is requested while the job is in flight...
-    assert store.get("a")[1].cancelling
+    assert service.cancelling
     launcher.gates["a"].set()  # ...but JobDone was already on its way
     await settle(service)
 
-    assert status(store, "a") == JobStatus.DONE and not store.get("a")[1].cancelling
+    assert status(store, "a") == JobStatus.DONE and not service.cancelling
     assert (outputs.TRANSCRIPT_DIR / "a-archive").is_dir()
-
-
-async def test_interrupted_output_writing_leaves_no_archive_folder(started):
-    tmp_path, store, service, launcher = started
-    launcher.outcomes["a"] = "hang"
-    service.enqueue([spec(tmp_path, "a")])
-    await until(lambda: status(store, "a") == JobStatus.RUNNING)
-    (outputs.TRANSCRIPT_DIR / "partial").mkdir(parents=True)
-    store.update("a", file_id="partial")
-
-    await service.cancel(["a"])
-    await settle(service)
-
-    assert not (outputs.TRANSCRIPT_DIR / "partial").exists() and store.get("a")[1].file_id is None
 
 
 @pytest.mark.parametrize("exited", [False, True], ids=["killed", "exited-before-kill"])
@@ -319,7 +304,7 @@ async def test_cancel_while_the_transcription_ends(started, exited):
     launcher.gates["a"].set()  # ...but the transcription was already done
     await settle(service)
 
-    assert status(store, "a") == JobStatus.CANCELLED and not store.get("a")[1].cancelling
+    assert status(store, "a") == JobStatus.CANCELLED and not service.cancelling
     assert [phase for phase, _ in launcher.launches] == [1]
     service.retry("a")  # phase 1 reuses the transcription
     await settle(service)
@@ -336,7 +321,7 @@ async def test_speaker_detection_starts_with_step_and_progress_reset(started):
     first.set()
 
     await until(lambda: launcher.dispatched() == ["a", "a"])
-    seen = (status(store, "a"), service.step, store.get("a")[1].progress)
+    seen = (status(store, "a"), service.step, service.progress)
     launcher.gates["a"].set()  # before asserting, so a failure can't hang the teardown
     await settle(service)
 
@@ -452,7 +437,7 @@ async def test_event_bug_fails_only_that_job(started):
 
     async def events(self):
         async for event in original(self):
-            if isinstance(event, JobFileId) and event.job_id == "a":
+            if isinstance(event, JobDone) and event.job_id == "a":
                 yield JobProgress("a", "Transcribe", None, 1)  # can't be handled
             yield event
 
@@ -508,9 +493,7 @@ async def test_recovery_after_a_restart(env):
             spec(tmp_path, "c", speaker_detection=True),
         ]
     )
-    store.update("a", status=JobStatus.RUNNING, file_id="partial")
-    (outputs.TRANSCRIPT_DIR / "partial").mkdir(parents=True)
-    for job_id in "bc":
+    for job_id in "abc":
         store.update(job_id, status=JobStatus.RUNNING)
     b_spec = store.get("b")[0]
     outputs.write_checkpoint(
@@ -524,8 +507,21 @@ async def test_recovery_after_a_restart(env):
     await service.start()
     try:
         assert [status(store, job_id) for job_id in "abc"] == [JobStatus.QUEUED] * 3
-        assert not (outputs.TRANSCRIPT_DIR / "partial").exists()
         assert (store.work_dir("b") / RAW_CHECKPOINT).is_file()  # phase 1 reuses it
+    finally:
+        await service.stop()
+
+
+async def test_start_deletes_uploads_that_never_became_jobs(env):
+    tmp_path, store, service, _launcher = env
+    store.add([spec(tmp_path, "a")])
+    for job_id in ("a", "abandoned"):
+        (store.uploads_root / job_id).mkdir(parents=True)
+    service.pause()
+
+    await service.start()
+    try:
+        assert [folder.name for folder in store.uploads_root.iterdir()] == ["a"]
     finally:
         await service.stop()
 
@@ -557,8 +553,7 @@ async def test_stop_releases_the_lock_after_a_scheduler_error(env, monkeypatch):
 
     with pytest.raises(RuntimeError):
         await service.stop()
-    with QueueLock(store.root):  # the lock was released
-        pass
+    acquire_and_release(store.root)  # the lock was released
 
 
 async def test_start_reads_the_queue_under_the_lock(env):

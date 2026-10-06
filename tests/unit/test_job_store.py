@@ -84,7 +84,7 @@ def test_clear_finished_keeps_active_jobs(tmp_path):
     store.update("a", status=JobStatus.DONE)
     store.update("b", status=JobStatus.FAILED)
 
-    assert store.clear_finished() == ["a", "b"]
+    store.clear_finished()
     assert ids(store) == ["c", "d"]
 
 

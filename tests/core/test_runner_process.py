@@ -62,7 +62,7 @@ def kinds(events) -> list[str]:
 def test_events_arrive_in_order(jobs):
     events = asyncio.run(drive(runner.launch_phase1(jobs[0], FACTORY)))
 
-    assert kinds(events) == ["JobFileId", "JobDone", "PhaseFinished"]
+    assert kinds(events) == ["JobDone", "PhaseFinished"]
     assert [e.job_id for e in events if isinstance(e, runner.JobDone)] == ["job1"]
 
 

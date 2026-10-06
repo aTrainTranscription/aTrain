@@ -1,5 +1,5 @@
-"""Backend-neutral transcription steps: load a model once, then transcribe or diarize
-several recordings with it.
+"""Backend-neutral transcription steps: load a model, then transcribe or diarize a
+recording with it.
 
 torch, faster_whisper, pyannote and crisperwhisper are imported inside functions, so this
 module stays cheap to import (for example in a freshly spawned child process).

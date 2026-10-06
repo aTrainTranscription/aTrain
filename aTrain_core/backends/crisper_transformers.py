@@ -37,7 +37,7 @@ def _suppress_encoder_attentions(model) -> None:
 
 
 def load_model(model_path: Path, device: Device, compute_type: ComputeType, cpu_threads: int):
-    """Load CrisperWhisper once, so several recordings can be transcribed with it."""
+    """Load CrisperWhisper for transcribe_with_model."""
     # Import lazily so the normal faster-whisper path neither initializes nor
     # requires the Transformers backend at module import time.
     from crisperwhisper import CrisperWhisperModel
