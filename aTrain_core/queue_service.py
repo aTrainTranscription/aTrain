@@ -24,15 +24,12 @@ from aTrain_core.jobs import (
     JobStore,
     QueueLock,
     Step,
-    resume_status,
 )
 from aTrain_core.runner import (
-    RAW_CHECKPOINT,
     JobDone,
     JobFailed,
     JobFileId,
     JobProgress,
-    JobTranscribed,
     PhaseDied,
     PhaseError,
     PhaseHandle,
@@ -55,11 +52,12 @@ class QueueService:
         self.store = store
         self.paused = False
         self._lock = QueueLock(store.root)
-        self._launch = {1: launch_phase1, 2: launch_phase2}
+        self._launch = {Step.TRANSCRIPTION: launch_phase1, Step.DIARIZATION: launch_phase2}
         self._wake = asyncio.Event()
         self._scheduler_task: asyncio.Task | None = None
         self._stopping = False
         # the running phase
+        self.step = Step.TRANSCRIPTION  # what the running child does
         self._handle: PhaseHandle | None = None
         self._in_flight: str | None = None
         self._phase_error: PhaseError | None = None
@@ -73,7 +71,7 @@ class QueueService:
         self._lock.acquire()
         self.store.reload()  # another aTrain may have changed the queue until now
         for spec, state in self.store.jobs():
-            if state.status in (JobStatus.TRANSCRIBING, JobStatus.DIARIZING):
+            if state.status == JobStatus.RUNNING:
                 self._guarded(spec.id, self._resume, spec.id)
         self._scheduler_task = asyncio.create_task(self._scheduler())
         self._wake.set()
@@ -151,7 +149,8 @@ class QueueService:
             self.store.move(job_id, queued[target] - index)
 
     def pause(self) -> None:
-        """Start no new phase; the running one finishes."""
+        """Start no new phase; the running one finishes. A job between its two phases goes
+        back into the queue and keeps its transcription."""
         self.paused = True
 
     def resume(self) -> None:
@@ -169,43 +168,60 @@ class QueueService:
         while not self._stopping:
             await self._wake.wait()
             self._wake.clear()
-            while not (self._stopping or self.paused) and (head := self._head()) is not None:
-                spec, state = head
-                # a transcribed job stays at the head, so its phase 2 runs next
-                await self._run_phase(1 if state.status == JobStatus.QUEUED else 2, spec)
+            while not (self._stopping or self.paused) and (spec := self._head()) is not None:
+                await self._run_job(spec)
 
-    def _head(self) -> tuple[JobSpec, JobState] | None:
+    def _head(self) -> JobSpec | None:
         for spec, state in self.store.jobs():
-            if state.status in (JobStatus.QUEUED, JobStatus.TRANSCRIBED):
-                return spec, state
+            if state.status == JobStatus.QUEUED:
+                return spec
         return None
 
-    async def _run_phase(self, phase: int, spec: JobSpec) -> None:
-        step = Step.TRANSCRIPTION if phase == 1 else Step.DIARIZATION
+    async def _run_job(self, spec: JobSpec) -> None:
+        """The transcription, then the speaker detection. The children reuse what the job's
+        checkpoints hold, so a job that comes back into the queue redoes only what is missing."""
+        try:
+            if not (await self._run_phase(Step.TRANSCRIPTION, spec) and spec.speaker_detection):
+                return
+            if spec.id in self._cancel_requested:  # transcribed just before the kill
+                self._guarded(spec.id, self.store.update, spec.id, status=JobStatus.CANCELLED)
+                self._finish(spec.id)
+            elif self.paused or self._stopping:
+                self._guarded(spec.id, self.store.update, spec.id, status=JobStatus.QUEUED)
+            else:
+                await self._run_phase(Step.DIARIZATION, spec)
+        finally:
+            self._cancel_requested.clear()
+
+    async def _run_phase(self, step: Step, spec: JobSpec) -> bool:
+        """Run one child for the job. True if it ended without a result or a crash: it did
+        its step, and the job continues with the next one."""
         self._phase_error = None
         try:
             if not spec.source.exists():
                 self._fail(spec.id, step, "Source file not found")
-                return
+                return False
             started_at = self.store.get(spec.id)[1].started_at or _now()
-            running = JobStatus.TRANSCRIBING if phase == 1 else JobStatus.DIARIZING
-            self.store.update(spec.id, status=running, started_at=started_at)
+            self.store.update(spec.id, status=JobStatus.RUNNING, started_at=started_at)
             self.store.get(spec.id)[1].progress = 0.0  # each phase reports from 0
+            self.step = step
             self._in_flight = spec.id
             job = PhaseJob(spec, started_at, self.store.work_dir(spec.id))
-            self._handle = self._launch[phase](job)
+            self._handle = self._launch[step](job)
         except Exception as e:
             # e.g. queue.json can't be saved or the process can't start: fail this job
             log.exception("Could not start job %s", spec.id)
             self._in_flight = None
             self._guarded(spec.id, self._fail, spec.id, step, f"Internal error: {e}", format_exc())
-            return
+            return False
         try:
             async for event in self._handle.events():
                 self._guarded(getattr(event, "job_id", self._in_flight), self._on_event, event)
+            # a result, a failure or a crash would have taken the job out of flight
+            return self._in_flight == spec.id
         finally:
             self._handle = None
-            self._cancel_requested.clear()
+            self._in_flight = None
 
     def _on_event(self, event) -> None:
         if isinstance(event, PhaseError):
@@ -218,13 +234,6 @@ class QueueService:
             self.store.get(event.job_id)[1].progress = event.current / (event.total or 1)
         elif isinstance(event, JobFileId):
             self.store.update(event.job_id, file_id=event.file_id)
-        elif isinstance(event, JobTranscribed):
-            self._in_flight = None
-            # cancelled meanwhile: keep the transcription for a retry, but don't go on
-            cancelled = event.job_id in self._cancel_requested
-            status = JobStatus.CANCELLED if cancelled else JobStatus.TRANSCRIBED
-            self.store.update(event.job_id, status=status, audio_duration=event.audio_duration)
-            self._finish(event.job_id)
         elif isinstance(event, JobDone):
             self._in_flight = None
             self.store.update(
@@ -251,7 +260,7 @@ class QueueService:
         if job_id is not None:
             _, state = self.store.get(job_id)
             state.cancelling = False
-            step = self._current_step(state)
+            step = Step.OUTPUT if state.file_id is not None else self.step
             self._drop_incomplete_output(job_id)
             if job_id in self._cancel_requested:
                 self.store.update(job_id, status=JobStatus.CANCELLED)
@@ -262,21 +271,13 @@ class QueueService:
                 message = f"Processing stopped unexpectedly (possibly out of memory): {reason}"
                 self._fail(job_id, step, message, traceback)
 
-    def _current_step(self, state: JobState) -> Step:
-        if state.file_id is not None:
-            return Step.OUTPUT
-        if state.status in (JobStatus.TRANSCRIBED, JobStatus.DIARIZING):
-            return Step.DIARIZATION
-        return Step.TRANSCRIPTION
-
     # --- helpers ----------------------------------------------------------------------
 
     def _resume(self, job_id: str) -> None:
-        """Back into the queue after a stop, a restart or a retry, keeping finished work."""
-        spec, _ = self.store.get(job_id)
+        """Back into the queue after a stop, a restart or a retry. The checkpoints stay, so
+        finished work is reused."""
         self._drop_incomplete_output(job_id)
-        raw = outputs.read_checkpoint(self.store.work_dir(job_id) / RAW_CHECKPOINT, spec.source)
-        self.store.update(job_id, status=resume_status(spec, raw_checkpoint_valid=raw is not None))
+        self.store.update(job_id, status=JobStatus.QUEUED)
 
     def _fail(self, job_id: str, step: Step, error: str, traceback: str | None = None) -> None:
         try:
@@ -322,7 +323,7 @@ class QueueService:
             try:
                 _, state = self.store.get(job_id)
                 if state.status not in FINAL_STATUSES:
-                    step = state.failed_step or self._current_step(state)
+                    step = state.failed_step or self.step
                     self._fail(job_id, step, f"Internal error: {e}")
             except Exception:
                 log.exception("Could not mark job %s as failed", job_id)

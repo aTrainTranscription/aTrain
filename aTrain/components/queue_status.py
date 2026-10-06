@@ -7,23 +7,18 @@ from datetime import datetime
 from aTrain.components.dialogs.error import dialog_error
 from aTrain.utils.archive import download_file_directory, open_file_directory
 from aTrain_core.globals import TIMESTAMP_FORMAT
-from aTrain_core.jobs import FINAL_STATUSES, JobStatus
+from aTrain_core.jobs import FINAL_STATUSES, JobStatus, Step
 from nicegui import app, ui
 
 STATUS_TEXT = {
     JobStatus.QUEUED: "Queued",
-    JobStatus.TRANSCRIBING: "Transcribing",
-    JobStatus.TRANSCRIBED: "Waiting for speaker detection",
-    JobStatus.DIARIZING: "Detecting speakers",
+    JobStatus.RUNNING: "Running",
     JobStatus.DONE: "Done",
     JobStatus.FAILED: "Failed",
     JobStatus.CANCELLED: "Cancelled",
 }
-RUNNING = {JobStatus.TRANSCRIBING, JobStatus.DIARIZING}
-ACTIVE = RUNNING | {JobStatus.TRANSCRIBED}  # transcribed: speaker detection starts right away
 ICONS = {
     JobStatus.QUEUED: ("schedule", "text-gray-400"),
-    JobStatus.TRANSCRIBED: ("schedule", "text-gray-400"),
     JobStatus.DONE: ("check_circle", "text-dark"),
     JobStatus.FAILED: ("error", "text-red-700"),
     JobStatus.CANCELLED: ("block", "text-dark"),
@@ -40,11 +35,8 @@ def elapsed(started_at: str | None) -> str:
 
 
 def running_job(jobs):
-    """The job in the header: the one in a phase, else one waiting for speaker detection."""
-    return next(
-        (job for job in jobs if job[1].status in RUNNING),
-        next((job for job in jobs if job[1].status == JobStatus.TRANSCRIBED), None),
-    )
+    """The job in the header."""
+    return next((job for job in jobs if job[1].status == JobStatus.RUNNING), None)
 
 
 def summary_text(jobs) -> str:
@@ -312,14 +304,14 @@ def queue_status(service):
             return
 
         spec, state = running
-        status = state.status
+        diarizing = service.step == Step.DIARIZATION
         steps = 2 if spec.speaker_detection else 1
-        step = 1 if status == JobStatus.TRANSCRIBING else 2
+        step = 2 if diarizing else 1
         if state.cancelling:
             task = "Cancelling…"
         else:
-            task = "Transcribing" if status == JobStatus.TRANSCRIBING else "Detecting speakers"
-        progress = 0.0 if status == JobStatus.TRANSCRIBED else min(state.progress, 1.0)
+            task = "Detecting speakers" if diarizing else "Transcribing"
+        progress = min(state.progress, 1.0)
         name.text = spec.display_name
         details.text = " · ".join(
             filter(

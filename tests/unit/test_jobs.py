@@ -1,18 +1,9 @@
-"""Unit tests for aTrain_core.jobs: JobSpec / JobState JSON, transitions, resume_status."""
+"""Unit tests for aTrain_core.jobs: JobSpec / JobState JSON."""
 
 from pathlib import Path
 
 import pytest
-from aTrain_core.jobs import (
-    ALLOWED,
-    InvalidTransitionError,
-    JobSpec,
-    JobState,
-    JobStatus,
-    Step,
-    check_transition,
-    resume_status,
-)
+from aTrain_core.jobs import JobSpec, JobState, JobStatus, Step
 from aTrain_core.settings import ComputeType, Device, ModelKey
 
 
@@ -88,43 +79,3 @@ def test_to_settings_copies_every_setting():
     assert (settings.file_id, settings.timestamp) == ("f", "t")
     assert (settings.temperature, settings.initial_prompt) == (0.2, "Interview")
     assert (settings.speaker_count, settings.cpu_threads) == (2, 8)
-
-
-@pytest.mark.parametrize("speaker_detection", [True, False])
-@pytest.mark.parametrize("old", list(JobStatus))
-@pytest.mark.parametrize("new", list(JobStatus))
-def test_transition_matrix(old, new, speaker_detection):
-    spec = make_spec(speaker_detection=speaker_detection)
-    speaker_only = {JobStatus.TRANSCRIBED, JobStatus.DIARIZING}
-    allowed = new in ALLOWED[old] and (speaker_detection or new not in speaker_only)
-    if allowed:
-        check_transition(spec, old, new)
-    else:
-        with pytest.raises(InvalidTransitionError):
-            check_transition(spec, old, new)
-
-
-def test_failed_and_cancelled_reachable_from_every_active_status():
-    for status in (
-        JobStatus.QUEUED,
-        JobStatus.TRANSCRIBING,
-        JobStatus.TRANSCRIBED,
-        JobStatus.DIARIZING,
-    ):
-        assert {JobStatus.FAILED, JobStatus.CANCELLED} <= ALLOWED[status]
-
-
-def test_resume_status():
-    with_speakers, without = make_spec(), make_spec(speaker_detection=False)
-    assert resume_status(with_speakers, raw_checkpoint_valid=True) == JobStatus.TRANSCRIBED
-    assert resume_status(with_speakers, raw_checkpoint_valid=False) == JobStatus.QUEUED
-    assert resume_status(without, raw_checkpoint_valid=True) == JobStatus.QUEUED
-    # every result is reachable from every status resume_status is used on
-    for status in (
-        JobStatus.TRANSCRIBING,
-        JobStatus.DIARIZING,
-        JobStatus.FAILED,
-        JobStatus.CANCELLED,
-    ):
-        check_transition(with_speakers, status, JobStatus.QUEUED)
-        check_transition(with_speakers, status, JobStatus.TRANSCRIBED)

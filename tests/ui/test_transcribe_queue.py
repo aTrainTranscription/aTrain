@@ -14,7 +14,7 @@ from aTrain.utils import file_selection, queue_ui, transcription
 from aTrain.utils.file_selection import check_dropped, ignored_files
 from aTrain.utils.linux_drop import EVENT
 from aTrain.utils.transcription import UploadPayload, start_paths, start_payloads
-from aTrain_core.jobs import JobStatus, JobStore, QueueLockedError
+from aTrain_core.jobs import JobStatus, JobStore, QueueLockedError, Step
 from aTrain_core.queue_service import QueueService
 from aTrain_core.settings import ComputeType, Device
 from nicegui import ElementFilter, app, ui
@@ -254,8 +254,8 @@ async def test_model_options_show_their_description(known_models, user: User):
 
 
 async def test_panel_shows_the_running_job(service, tmp_path, user: User):
-    add(service, tmp_path, "done", S.TRANSCRIBING, S.DONE)
-    add(service, tmp_path, "running", S.TRANSCRIBING)
+    add(service, tmp_path, "done", S.RUNNING, S.DONE)
+    add(service, tmp_path, "running", S.RUNNING)
     add(service, tmp_path, "queued")
     service.store.get("running")[1].progress = 0.62
 
@@ -269,20 +269,14 @@ async def test_panel_shows_the_running_job(service, tmp_path, user: User):
     await user.should_see(marker="stop_all")  # the running and the queued job are open
 
 
-@pytest.mark.parametrize(
-    ("statuses", "percent"),
-    [
-        ((S.TRANSCRIBING, S.TRANSCRIBED), "0%"),
-        ((S.TRANSCRIBING, S.TRANSCRIBED, S.DIARIZING), "40%"),
-    ],
-)
-async def test_panel_shows_speaker_detection(service, tmp_path, user: User, statuses, percent):
-    add(service, tmp_path, "a", *statuses, speaker_detection=True)
+async def test_panel_shows_speaker_detection(service, tmp_path, user: User):
+    add(service, tmp_path, "a", S.RUNNING, speaker_detection=True)
+    service.step = Step.DIARIZATION
     service.store.get("a")[1].progress = 0.4
 
     await open_page(user)
 
-    for text in ("Detecting speakers · Step 2 of 2", percent, "The queue is empty."):
+    for text in ("Detecting speakers · Step 2 of 2", "40%", "The queue is empty."):
         await user.should_see(text, retries=200)
 
 
@@ -308,7 +302,7 @@ async def test_pause_and_resume(service, tmp_path, user: User):
 
 
 async def test_stop_is_hidden_while_cancelling(service, tmp_path, user: User):
-    add(service, tmp_path, "a", S.TRANSCRIBING)
+    add(service, tmp_path, "a", S.RUNNING)
     await open_page(user)
     await user.should_see("Transcribing", retries=200)
     await user.should_see(marker="stop_job")
@@ -318,7 +312,7 @@ async def test_stop_is_hidden_while_cancelling(service, tmp_path, user: User):
 
 
 async def test_stop_all_shows_with_more_than_one_open_job(service, tmp_path, user: User):
-    add(service, tmp_path, "a", S.TRANSCRIBING)
+    add(service, tmp_path, "a", S.RUNNING)
     await open_page(user)
     await user.should_see("a.mp3", retries=200)
     await user.should_not_see(marker="stop_all")
@@ -333,7 +327,7 @@ async def test_stop_all_shows_with_more_than_one_open_job(service, tmp_path, use
 
 
 async def test_stop_asks_and_keeps_the_original_job(service, tmp_path, user: User, monkeypatch):
-    add(service, tmp_path, "a", S.TRANSCRIBING)
+    add(service, tmp_path, "a", S.RUNNING)
     add(service, tmp_path, "b")
     await open_page(user)
     await user.should_see("a.mp3", retries=200)
@@ -341,7 +335,7 @@ async def test_stop_asks_and_keeps_the_original_job(service, tmp_path, user: Use
     await user.should_see("Stop transcribing a.mp3?")
     await user.should_see("Stop job")
     service.store.update("a", status=S.DONE)
-    service.store.update("b", status=S.TRANSCRIBING)
+    service.store.update("b", status=S.RUNNING)
     await user.should_see("Transcribing · Step 1 of 1", retries=200)
     cancel, calls = service.cancel, []
 
@@ -353,14 +347,14 @@ async def test_stop_asks_and_keeps_the_original_job(service, tmp_path, user: Use
     user.find(marker="confirm_ok").click()
     await until(lambda: calls)
     assert calls == [["a"]]
-    assert service.store.get("b")[1].status == S.TRANSCRIBING
+    assert service.store.get("b")[1].status == S.RUNNING
 
 
 # --- the list -------------------------------------------------------------------------
 
 
 async def test_list_actions_per_status(service, tmp_path, user: User):
-    add(service, tmp_path, "done", S.TRANSCRIBING, S.DONE)
+    add(service, tmp_path, "done", S.RUNNING, S.DONE)
     add(service, tmp_path, "failed", S.FAILED)
     add(service, tmp_path, "cancelled", S.CANCELLED)
     add(service, tmp_path, "first", language="de", speaker_detection=True, speaker_count=3)
@@ -426,7 +420,7 @@ async def test_failed_job_shows_its_error(service, tmp_path, user: User):
 @pytest.mark.parametrize(
     ("statuses", "upload", "texts"),
     [
-        ((S.TRANSCRIBING, S.DONE), False, ["Remove x.mp3? The transcript stays in the archive."]),
+        ((S.RUNNING, S.DONE), False, ["Remove x.mp3? The transcript stays in the archive."]),
         ((), False, ["Remove x.mp3 from the queue?"]),
         ((S.FAILED,), True, ["Remove x.mp3 from the queue?", "The uploaded file will be deleted."]),
     ],
@@ -459,7 +453,7 @@ async def test_back_keeps_the_job(service, tmp_path, user: User):
 
 async def test_clear_finished_keeps_the_others(service, tmp_path, user: User):
     add(service, tmp_path, "a")
-    add(service, tmp_path, "b", S.TRANSCRIBING, S.DONE)
+    add(service, tmp_path, "b", S.RUNNING, S.DONE)
     add(service, tmp_path, "c", S.CANCELLED)
     (service.store.uploads_root / "c").mkdir(parents=True)
     await open_page(user)
@@ -473,7 +467,7 @@ async def test_clear_finished_keeps_the_others(service, tmp_path, user: User):
 
 
 async def test_export_warning_is_shown(service, tmp_path, user: User):
-    add(service, tmp_path, "a", S.TRANSCRIBING)
+    add(service, tmp_path, "a", S.RUNNING)
     await open_page(user)
     warning = "Copy to /media/usb/transcriptions failed: disk full"
     service.store.update("a", status=S.DONE, file_id="a-result", warnings=[warning])

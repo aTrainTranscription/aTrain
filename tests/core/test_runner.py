@@ -123,9 +123,7 @@ def test_speaker_detection_goes_through_both_phases(env):
     job = make_job(tmp_path, "a")
     phase1 = FakeChannel()
     runner.run_phase1(job, phase1, lambda key: FakeTranscriber())
-    assert [
-        type(e) for e in phase1.events if isinstance(e, runner.JobTranscribed | runner.JobDone)
-    ] == [runner.JobTranscribed]
+    assert phase1.of(runner.JobDone) == phase1.of(runner.JobFailed) == []
     assert (job.work_dir / runner.RAW_CHECKPOINT).is_file()
 
     phase2 = FakeChannel()

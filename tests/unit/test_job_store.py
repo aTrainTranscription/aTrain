@@ -4,7 +4,7 @@ import json
 
 import pytest
 from aTrain_core import jobs
-from aTrain_core.jobs import InvalidTransitionError, JobStatus, JobStore
+from aTrain_core.jobs import JobStatus, JobStore
 from tests.unit.test_jobs import make_spec
 
 
@@ -15,7 +15,7 @@ def ids(store: JobStore) -> list[str]:
 def test_add_and_reload(tmp_path):
     store = JobStore(tmp_path)
     store.add([make_spec(id="a"), make_spec(id="b", speaker_detection=False)])
-    store.update("a", status=JobStatus.TRANSCRIBING, started_at="2026-09-30 14-06-40")
+    store.update("a", status=JobStatus.RUNNING, started_at="2026-09-30 14-06-40")
 
     reloaded = JobStore(tmp_path)
     assert ids(reloaded) == ["a", "b"]
@@ -28,17 +28,6 @@ def test_add_rejects_duplicate_ids(tmp_path):
     store.add([make_spec(id="a")])
     with pytest.raises(ValueError):
         store.add([make_spec(id="a")])
-
-
-def test_update_checks_transitions(tmp_path):
-    store = JobStore(tmp_path)
-    store.add([make_spec(id="a", speaker_detection=False)])
-    with pytest.raises(InvalidTransitionError):
-        store.update("a", status=JobStatus.DONE)
-    store.update("a", status=JobStatus.TRANSCRIBING)
-    with pytest.raises(InvalidTransitionError):
-        store.update("a", status=JobStatus.TRANSCRIBED)  # no speaker detection
-    assert store.update("a", status=JobStatus.DONE).status == JobStatus.DONE
 
 
 def test_move(tmp_path):
@@ -91,7 +80,7 @@ def test_clear_finished_keeps_active_jobs(tmp_path):
     store = JobStore(tmp_path)
     store.add([make_spec(id=job_id, speaker_detection=False) for job_id in "abcd"])
     for job_id in "abc":
-        store.update(job_id, status=JobStatus.TRANSCRIBING)
+        store.update(job_id, status=JobStatus.RUNNING)
     store.update("a", status=JobStatus.DONE)
     store.update("b", status=JobStatus.FAILED)
 
@@ -117,11 +106,11 @@ def test_clear_finished_saves_once_and_deletes_work_folders(tmp_path, monkeypatc
 def test_reload_reads_what_another_store_saved(tmp_path):
     store = JobStore(tmp_path)
     store.add([make_spec(id="a", speaker_detection=False)])
-    JobStore(tmp_path).update("a", status=JobStatus.TRANSCRIBING)
+    JobStore(tmp_path).update("a", status=JobStatus.RUNNING)
 
     store.reload()
 
-    assert store.get("a")[1].status == JobStatus.TRANSCRIBING
+    assert store.get("a")[1].status == JobStatus.RUNNING
 
 
 @pytest.mark.parametrize("operation", ["add", "update", "move", "remove", "clear_finished"])

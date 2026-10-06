@@ -63,12 +63,6 @@ class JobFileId:
 
 
 @dataclass(frozen=True, slots=True)
-class JobTranscribed:
-    job_id: str
-    audio_duration: int
-
-
-@dataclass(frozen=True, slots=True)
 class JobDone:
     job_id: str
     audio_duration: int
@@ -204,8 +198,7 @@ def _run_phase1_job(load: Callable, job: PhaseJob, channel: Channel) -> None:
             transcript, duration = checkpoint.transcript, checkpoint.audio_duration
             log("Reusing the saved transcription")
         if job.spec.speaker_detection:
-            channel.send(JobTranscribed(job.spec.id, duration))
-            return
+            return  # phase 2 detects the speakers and writes the outputs
         step = Step.OUTPUT
         _write_outputs(channel, job, transcript, duration, backend_of(job.spec.model))
     except Exception as e:

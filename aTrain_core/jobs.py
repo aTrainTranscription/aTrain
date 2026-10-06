@@ -87,10 +87,8 @@ class JobSpec:
 
 
 class JobStatus(StrEnum):
-    QUEUED = auto()  # waiting for phase 1
-    TRANSCRIBING = auto()  # handed to a phase-1 child
-    TRANSCRIBED = auto()  # raw checkpoint written; waiting for phase 2 (speaker detection only)
-    DIARIZING = auto()  # handed to a phase-2 child
+    QUEUED = auto()  # waiting; its checkpoints are reused when it runs
+    RUNNING = auto()  # its transcription or speaker detection child is running
     DONE = auto()  # archive folder complete
     FAILED = auto()
     CANCELLED = auto()
@@ -103,45 +101,6 @@ class Step(StrEnum):
 
 
 FINAL_STATUSES = {JobStatus.DONE, JobStatus.FAILED, JobStatus.CANCELLED}
-SPEAKER_DETECTION_ONLY = {JobStatus.TRANSCRIBED, JobStatus.DIARIZING}
-ALLOWED: dict[JobStatus, set[JobStatus]] = {
-    JobStatus.QUEUED: {JobStatus.TRANSCRIBING, JobStatus.FAILED, JobStatus.CANCELLED},
-    JobStatus.TRANSCRIBING: {
-        JobStatus.DONE,
-        JobStatus.TRANSCRIBED,
-        JobStatus.QUEUED,
-        JobStatus.FAILED,
-        JobStatus.CANCELLED,
-    },
-    JobStatus.TRANSCRIBED: {JobStatus.DIARIZING, JobStatus.FAILED, JobStatus.CANCELLED},
-    JobStatus.DIARIZING: {
-        JobStatus.DONE,
-        JobStatus.TRANSCRIBED,
-        JobStatus.QUEUED,
-        JobStatus.FAILED,
-        JobStatus.CANCELLED,
-    },
-    JobStatus.DONE: set(),
-    JobStatus.FAILED: {JobStatus.QUEUED, JobStatus.TRANSCRIBED},
-    JobStatus.CANCELLED: {JobStatus.QUEUED, JobStatus.TRANSCRIBED},
-}
-
-
-class InvalidTransitionError(Exception):
-    pass
-
-
-def check_transition(spec: JobSpec, old: JobStatus, new: JobStatus) -> None:
-    """Raise InvalidTransitionError unless old -> new is allowed for this job."""
-    if new not in ALLOWED[old] or (new in SPEAKER_DETECTION_ONLY and not spec.speaker_detection):
-        raise InvalidTransitionError(f"Job {spec.id}: {old} -> {new} is not allowed")
-
-
-def resume_status(spec: JobSpec, *, raw_checkpoint_valid: bool) -> JobStatus:
-    """Where a job continues after a stop, a restart or a retry."""
-    if spec.speaker_detection and raw_checkpoint_valid:
-        return JobStatus.TRANSCRIBED
-    return JobStatus.QUEUED
 
 
 @dataclass(slots=True)
@@ -218,13 +177,10 @@ class JobStore:
         return list(self._jobs)
 
     def update(self, job_id: str, **changes) -> JobState:
-        """Change saved state fields. A new `status` is checked against ALLOWED.
-        `progress` and `cancelling` are memory only; set them on the state directly."""
+        """Change saved state fields. `progress` and `cancelling` are memory only; set them on
+        the state directly."""
         index = self._index(job_id)
         spec, state = self._jobs[index]
-        status = changes.get("status", state.status)
-        if status != state.status:
-            check_transition(spec, state.status, status)
         jobs = self._jobs.copy()
         jobs[index] = (spec, replace(state, **changes))
         self._save(jobs)

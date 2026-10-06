@@ -14,7 +14,6 @@ from aTrain_core.runner import (
     JobFailed,
     JobFileId,
     JobProgress,
-    JobTranscribed,
     PhaseDied,
     PhaseFinished,
 )
@@ -25,7 +24,7 @@ from tests.unit.test_jobs import make_spec
 class FakeHandle:
     """Behaves like a phase child running one job. Per job id, `outcomes` says what
     happens: "done" (default), "fail", "crash" or "hang" (works until killed). A job with a
-    gate waits for it first."""
+    gate waits for it first. A job in `exited_before_kill` has ended when a kill comes."""
 
     def __init__(self, launcher, phase, job):
         self.launcher, self.phase, self.job = launcher, phase, job
@@ -56,14 +55,14 @@ class FakeHandle:
                 audio_duration=5,
                 source=job.spec.source,
             )
-            yield JobTranscribed(job_id, 5)
         else:
             file_id = f"{job_id}-archive"
             (outputs.TRANSCRIPT_DIR / file_id).mkdir(parents=True)
             yield JobFileId(job_id, file_id)
             yield JobDone(job_id, 5, [])
         # events sent before a kill still arrive
-        yield PhaseDied(-9) if self.killed.is_set() else PhaseFinished()
+        killed = self.killed.is_set() and job_id not in launcher.exited_before_kill
+        yield PhaseDied(-9) if killed else PhaseFinished()
 
     def kill(self):
         self.killed.set()
@@ -77,6 +76,7 @@ class FakeLauncher:
         self.gates: dict[str, asyncio.Event] = {}
         self.load_crash_models: set[str] = set()
         self.launch_error_models: set[str] = set()
+        self.exited_before_kill: set[str] = set()
 
     def launch(self, phase):
         def launch(job):
@@ -206,7 +206,7 @@ def ids(service):
 def test_move_swaps_queued_neighbours_only(env):
     tmp_path, store, service, _launcher = env
     store.add([spec(tmp_path, job_id) for job_id in "abcde"])
-    store.update("a", status=JobStatus.TRANSCRIBING)  # running
+    store.update("a", status=JobStatus.RUNNING)  # running
     store.update("c", status=JobStatus.CANCELLED)
 
     service.move("d", -1)  # over the cancelled job to b, not below the running job
@@ -255,7 +255,7 @@ async def test_cancel_the_running_job(started):
     tmp_path, store, service, launcher = started
     launcher.outcomes["a"] = "hang"
     service.enqueue([spec(tmp_path, "a"), spec(tmp_path, "b")])
-    await until(lambda: status(store, "a") == JobStatus.TRANSCRIBING)
+    await until(lambda: status(store, "a") == JobStatus.RUNNING)
 
     await service.cancel(["a"])
     await settle(service)
@@ -296,7 +296,7 @@ async def test_interrupted_output_writing_leaves_no_archive_folder(started):
     tmp_path, store, service, launcher = started
     launcher.outcomes["a"] = "hang"
     service.enqueue([spec(tmp_path, "a")])
-    await until(lambda: status(store, "a") == JobStatus.TRANSCRIBING)
+    await until(lambda: status(store, "a") == JobStatus.RUNNING)
     (outputs.TRANSCRIPT_DIR / "partial").mkdir(parents=True)
     store.update("a", file_id="partial")
 
@@ -306,40 +306,41 @@ async def test_interrupted_output_writing_leaves_no_archive_folder(started):
     assert not (outputs.TRANSCRIPT_DIR / "partial").exists() and store.get("a")[1].file_id is None
 
 
-async def test_cancel_while_the_transcript_is_on_its_way(started):
+@pytest.mark.parametrize("exited", [False, True], ids=["killed", "exited-before-kill"])
+async def test_cancel_while_the_transcription_ends(started, exited):
     tmp_path, store, service, launcher = started
     launcher.gates["a"] = asyncio.Event()
+    if exited:
+        launcher.exited_before_kill.add("a")
     service.enqueue([spec(tmp_path, "a", speaker_detection=True)])
     await until(lambda: launcher.dispatched() == ["a"])
 
     await service.cancel(["a"])  # the kill is requested while the job is in flight...
-    launcher.gates["a"].set()  # ...but JobTranscribed was already on its way
+    launcher.gates["a"].set()  # ...but the transcription was already done
     await settle(service)
 
     assert status(store, "a") == JobStatus.CANCELLED and not store.get("a")[1].cancelling
     assert [phase for phase, _ in launcher.launches] == [1]
-    service.retry("a")  # keeps the transcription
+    service.retry("a")  # phase 1 reuses the transcription
     await settle(service)
     assert status(store, "a") == JobStatus.DONE
-    assert [phase for phase, _ in launcher.launches] == [1, 2]
+    assert [phase for phase, _ in launcher.launches] == [1, 1, 2]
 
 
-async def test_progress_starts_at_zero_in_each_phase(started):
+async def test_speaker_detection_starts_with_step_and_progress_reset(started):
     tmp_path, store, service, launcher = started
-    service.pause()
+    first = launcher.gates["a"] = asyncio.Event()
     service.enqueue([spec(tmp_path, "a", speaker_detection=True)])
-    store.update("a", status=JobStatus.TRANSCRIBING)
-    store.update("a", status=JobStatus.TRANSCRIBED)
-    store.get("a")[1].progress = 0.99  # left over from the transcription
-    launcher.gates["a"] = asyncio.Event()
-
-    service.resume()
     await until(lambda: launcher.dispatched() == ["a"])
-    seen = (status(store, "a"), store.get("a")[1].progress)
+    launcher.gates["a"] = asyncio.Event()  # phase 2 waits on a new gate
+    first.set()
+
+    await until(lambda: launcher.dispatched() == ["a", "a"])
+    seen = (status(store, "a"), service.step, store.get("a")[1].progress)
     launcher.gates["a"].set()  # before asserting, so a failure can't hang the teardown
     await settle(service)
 
-    assert seen == (JobStatus.DIARIZING, 0.0)
+    assert seen == (JobStatus.RUNNING, Step.DIARIZATION, 0.0)  # phase 1 reported 0.5
 
 
 async def test_pause_during_transcription_does_not_start_phase_2(started):
@@ -350,13 +351,14 @@ async def test_pause_during_transcription_does_not_start_phase_2(started):
 
     service.pause()
     launcher.gates["a"].set()
-    await until(lambda: status(store, "a") == JobStatus.TRANSCRIBED)
+    await until(lambda: status(store, "a") == JobStatus.QUEUED)  # back, with its transcription
     await asyncio.sleep(0.1)
     assert [phase for phase, _ in launcher.launches] == [1]
 
     service.resume()
     await settle(service)
     assert status(store, "a") == JobStatus.DONE
+    assert [phase for phase, _ in launcher.launches] == [1, 1, 2]
 
 
 async def test_pause_and_resume(started):
@@ -444,19 +446,14 @@ async def test_remove_is_refused_for_the_running_job(started):
     await settle(service)
 
 
-async def test_status_bug_fails_only_that_job(started):
-    tmp_path, store, service, launcher = started
-    # JobTranscribed for a job without speaker detection is an invalid transition
-    launcher.outcomes["a"] = "done"
+async def test_event_bug_fails_only_that_job(started):
+    tmp_path, store, service, _launcher = started
     original = FakeHandle.events
 
     async def events(self):
         async for event in original(self):
             if isinstance(event, JobFileId) and event.job_id == "a":
-                yield JobTranscribed("a", 5)
-                continue
-            if isinstance(event, JobDone) and event.job_id == "a":
-                continue
+                yield JobProgress("a", "Transcribe", None, 1)  # can't be handled
             yield event
 
     FakeHandle.events = events
@@ -477,7 +474,7 @@ async def test_failed_save_when_starting_a_job_fails_only_that_job(started, monk
     save, failures = store._save, []
 
     def flaky_save(jobs):
-        if jobs[0][1].status == JobStatus.TRANSCRIBING and not failures:
+        if jobs[0][1].status == JobStatus.RUNNING and not failures:
             failures.append(True)
             raise OSError("disk full")
         save(jobs)
@@ -511,12 +508,10 @@ async def test_recovery_after_a_restart(env):
             spec(tmp_path, "c", speaker_detection=True),
         ]
     )
-    store.update("a", status=JobStatus.TRANSCRIBING, file_id="partial")
+    store.update("a", status=JobStatus.RUNNING, file_id="partial")
     (outputs.TRANSCRIPT_DIR / "partial").mkdir(parents=True)
     for job_id in "bc":
-        store.update(job_id, status=JobStatus.TRANSCRIBING)
-        store.update(job_id, status=JobStatus.TRANSCRIBED)
-        store.update(job_id, status=JobStatus.DIARIZING)
+        store.update(job_id, status=JobStatus.RUNNING)
     b_spec = store.get("b")[0]
     outputs.write_checkpoint(
         store.work_dir("b") / RAW_CHECKPOINT,
@@ -528,10 +523,9 @@ async def test_recovery_after_a_restart(env):
 
     await service.start()
     try:
-        assert status(store, "a") == JobStatus.QUEUED
+        assert [status(store, job_id) for job_id in "abc"] == [JobStatus.QUEUED] * 3
         assert not (outputs.TRANSCRIPT_DIR / "partial").exists()
-        assert status(store, "b") == JobStatus.TRANSCRIBED  # valid raw checkpoint
-        assert status(store, "c") == JobStatus.QUEUED  # none
+        assert (store.work_dir("b") / RAW_CHECKPOINT).is_file()  # phase 1 reuses it
     finally:
         await service.stop()
 
@@ -541,7 +535,7 @@ async def test_stop_puts_the_running_job_back(env):
     launcher.outcomes["a"] = "hang"
     await service.start()
     service.enqueue([spec(tmp_path, "a")])
-    await until(lambda: status(store, "a") == JobStatus.TRANSCRIBING)
+    await until(lambda: status(store, "a") == JobStatus.RUNNING)
 
     await service.stop()
 
@@ -571,7 +565,7 @@ async def test_start_reads_the_queue_under_the_lock(env):
     """A store loaded before another aTrain finished a job must not undo that job."""
     tmp_path, store, _service, launcher = env
     store.add([spec(tmp_path, "a")])
-    store.update("a", status=JobStatus.TRANSCRIBING, file_id="a-archive")
+    store.update("a", status=JobStatus.RUNNING, file_id="a-archive")
     (outputs.TRANSCRIPT_DIR / "a-archive").mkdir(parents=True)
     stale = JobStore(store.root)
     store.update("a", status=JobStatus.DONE)  # the other aTrain finishes and quits
