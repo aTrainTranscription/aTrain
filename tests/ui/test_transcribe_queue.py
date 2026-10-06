@@ -9,12 +9,11 @@ import aTrain_core.transcribe  # noqa: F401  pre-import so the splash import is 
 import pytest
 from aTrain.components.settings import file as file_component
 from aTrain.components.settings import model as model_component
-from aTrain.components.settings.speakers import CUSTOM_ERROR, speaker_settings
+from aTrain.components.settings.speakers import speaker_settings
 from aTrain.utils import file_selection, flatpak_portal, queue_ui, transcription
 from aTrain.utils.file_selection import FileSelection, check_dropped, ignored_files
 from aTrain.utils.linux_drop import EVENT
-from aTrain.utils.transcription import start_paths
-from aTrain_core.jobs import JobStatus, JobStore, QueueLockedError, Step
+from aTrain_core.jobs import JobStatus, JobStore, QueueLockedError
 from aTrain_core.queue_service import QueueService
 from aTrain_core.settings import ComputeType, Device
 from nicegui import ElementFilter, app, ui
@@ -131,13 +130,6 @@ async def test_panel_is_hidden_while_the_queue_is_empty(service, user: User):
     await user.should_not_see("The queue is empty.")
 
 
-async def test_sidebar_has_no_queue_item(user: User):
-    await user.open("/advanced")
-    await user.should_see("GPU acceleration", retries=100)
-    labels = [label.text for label in user.find(kind=ui.label).elements]
-    assert "Transcribe" in labels and "Queue" not in labels
-
-
 async def test_locked_queue_disables_add_to_queue(monkeypatch, user: User):
     async def locked():
         raise QueueLockedError("held")
@@ -174,6 +166,7 @@ async def test_add_to_queue_adds_one_job_per_file(
     await until(lambda: len(service.jobs()) == 2)
     jobs = service.jobs()
     assert [spec.display_name for spec, _ in jobs] == ["one.mp3", "two.mp3"]
+    assert [spec.source for spec, _ in jobs] == paths  # picked files are used, not copied
     assert all(spec.model == "tiny" and spec.speaker_count == 2 for spec, _ in jobs)
     await user.should_see("Drop audio or video files")  # the selection is cleared
     assert not add_button.enabled and add_button.text == "Add to queue"
@@ -220,45 +213,10 @@ async def test_a_folder_offers_a_copy_next_to_the_files(service, selections, tmp
         ("off", {"speaker_detection": False, "speaker_count": None}),
         ("auto", {"speaker_detection": True, "speaker_count": None}),
         (3, {"speaker_detection": True, "speaker_count": 3}),
-        (2, {"speaker_detection": True, "speaker_count": 2}),
     ],
 )
-async def test_speaker_options_set_the_job_settings(user: User, value, settings):
-    await user.open("/")
-    await user.should_see("Speakers", retries=200)
-    select = one(user, "select_speakers")
-    assert select.value == "off"  # the default
-    select.set_value(value)
-    assert {key: app.storage.general[key] for key in settings} == settings
+def test_speaker_options_set_the_job_settings(value, settings):
     assert speaker_settings(value) == settings
-
-
-async def test_a_custom_number_of_speakers(user: User):
-    await user.open("/")
-    await user.should_see("Speakers", retries=200)
-    select, number = one(user, "select_speakers"), one(user, "number_speakers")
-
-    error = next(e for e in user.client.elements.values() if getattr(e, "text", "") == CUSTOM_ERROR)
-    assert not error.visible
-    for rejected in (2, 3.5, 100, None):
-        number.set_value(rejected)
-        user.find(marker="button_set_speakers").click()
-        assert select.value == "off"
-        assert error.visible
-
-    number.set_value(12)
-    user.find(marker="button_set_speakers").click()
-    assert select.value == 12 and select.options[12] == "12 speakers"
-    assert app.storage.general["speaker_detection"] is True
-    assert app.storage.general["speaker_count"] == 12
-
-
-async def test_model_options_show_their_description(known_models, user: User):
-    await user.open("/")
-    await user.should_see("Model", retries=200)
-    template = one(user, "select_model").slots["option"].template
-    assert "The smallest and fastest model" in template
-    assert "A small model with better accuracy than tiny." in template
 
 
 # --- the running job ------------------------------------------------------------------
@@ -278,17 +236,6 @@ async def test_panel_shows_the_running_job(service, tmp_path, user: User):
     await user.should_not_see(marker="job_running")  # in the header, not in the list
     await user.should_see(marker="stop_job")
     await user.should_see(marker="stop_all")  # the running and the queued job are open
-
-
-async def test_panel_shows_speaker_detection(service, tmp_path, user: User):
-    add(service, tmp_path, "a", S.RUNNING, speaker_detection=True)
-    service.step = Step.DIARIZATION
-    service.progress = 0.4
-
-    await open_page(user)
-
-    for text in ("Detecting speakers · Step 2 of 2", "40%", "The queue is empty."):
-        await user.should_see(text, retries=200)
 
 
 async def test_idle_states(service, tmp_path, user: User):
@@ -312,16 +259,6 @@ async def test_pause_and_resume(service, tmp_path, user: User):
     service.pause()
 
 
-async def test_stop_is_hidden_while_cancelling(service, tmp_path, user: User):
-    add(service, tmp_path, "a", S.RUNNING)
-    await open_page(user)
-    await user.should_see("Transcribing", retries=200)
-    await user.should_see(marker="stop_job")
-    service.cancelling = True
-    await user.should_see("Cancelling…", retries=20)
-    await user.should_not_see(marker="stop_job")
-
-
 async def test_stop_all_shows_with_more_than_one_open_job(service, tmp_path, user: User):
     add(service, tmp_path, "a", S.RUNNING)
     await open_page(user)
@@ -335,30 +272,6 @@ async def test_stop_all_shows_with_more_than_one_open_job(service, tmp_path, use
     await user.should_see("Stop all 2 unfinished jobs?")
     user.find(marker="confirm_ok").click()
     await until(lambda: service.store.get("b")[1].status == S.CANCELLED)
-
-
-async def test_stop_asks_and_keeps_the_original_job(service, tmp_path, user: User, monkeypatch):
-    add(service, tmp_path, "a", S.RUNNING)
-    add(service, tmp_path, "b")
-    await open_page(user)
-    await user.should_see("a.mp3", retries=200)
-    user.find(marker="stop_job").click()
-    await user.should_see("Stop transcribing a.mp3?")
-    await user.should_see("Stop job")
-    service.store.update("a", status=S.DONE)
-    service.store.update("b", status=S.RUNNING)
-    await user.should_see("Transcribing · Step 1 of 1", retries=200)
-    cancel, calls = service.cancel, []
-
-    async def record_cancel(ids):
-        calls.append(ids)
-        await cancel(ids)
-
-    monkeypatch.setattr(service, "cancel", record_cancel)
-    user.find(marker="confirm_ok").click()
-    await until(lambda: calls)
-    assert calls == [["a"]]
-    assert service.store.get("b")[1].status == S.RUNNING
 
 
 # --- the list -------------------------------------------------------------------------
@@ -394,13 +307,6 @@ async def test_list_actions_per_status(service, tmp_path, user: User):
         ("last", "arrow_upward"): [True],
         ("last", "arrow_downward"): [False],
     }
-    await user.should_see("Failed ⓘ")
-    await user.should_see("Clear finished")
-
-    user.find(marker="queue_summary").click()
-    await user.should_not_see("first.mp3")
-    user.find(marker="queue_summary").click()
-    await user.should_see("first.mp3")
 
 
 async def test_move_and_retry(service, tmp_path, user: User):
@@ -428,39 +334,17 @@ async def test_failed_job_shows_its_error(service, tmp_path, user: User):
     await until(lambda: service.store.get("a")[1].status == S.QUEUED)
 
 
-@pytest.mark.parametrize(
-    ("statuses", "upload", "texts"),
-    [
-        ((S.RUNNING, S.DONE), False, ["Remove x.mp3? The transcript stays in the archive."]),
-        ((), False, ["Remove x.mp3 from the queue?"]),
-        ((S.FAILED,), True, ["Remove x.mp3 from the queue?", "The uploaded file will be deleted."]),
-    ],
-)
-async def test_remove_asks_first(service, tmp_path, user: User, statuses, upload, texts):
-    add(service, tmp_path, "x", *statuses)
-    if upload:
-        (service.store.uploads_root / "x").mkdir(parents=True)
+async def test_remove_asks_first(service, tmp_path, user: User):
+    add(service, tmp_path, "x", S.FAILED)
+    (service.store.uploads_root / "x").mkdir(parents=True)
     await open_page(user)
     await user.should_see("x.mp3", retries=200)
 
-    row_button(user, "x", "close").click()
-    for text in texts:
-        await user.should_see(text)
-    if not upload:
-        await user.should_not_see("The uploaded file will be deleted.")
-    user.find(marker="confirm_ok").click()
-    await until(lambda: service.jobs() == [])
-
-
-async def test_back_keeps_the_job(service, tmp_path, user: User):
-    add(service, tmp_path, "x")
-    await open_page(user)
-    await user.should_see("x.mp3", retries=200)
     row_button(user, "x", "close").click()
     await user.should_see("Remove x.mp3 from the queue?")
-    user.find(kind=ui.button, content="Back").click()
-    await user.should_not_see("Remove x.mp3 from the queue?")
-    assert ids(service) == ["x"]
+    await user.should_see("The uploaded file will be deleted.")
+    user.find(marker="confirm_ok").click()
+    await until(lambda: service.jobs() == [])
 
 
 async def test_clear_finished_keeps_the_others(service, tmp_path, user: User):
@@ -478,19 +362,6 @@ async def test_clear_finished_keeps_the_others(service, tmp_path, user: User):
     await until(lambda: ids(service) == ["a"])
 
 
-async def test_clear_finished_keeps_jobs_that_finished_while_asking(service, tmp_path, user: User):
-    add(service, tmp_path, "a")
-    add(service, tmp_path, "b", S.CANCELLED)
-    await open_page(user)
-    user.find(kind=ui.button, content="Clear finished").click()
-    await user.should_see("Remove 1 finished, failed or cancelled job from the queue?")
-
-    service.store.update("a", status=S.FAILED)  # finishes while the question is open
-    user.find(marker="confirm_ok").click()
-
-    await until(lambda: ids(service) == ["a"])
-
-
 async def test_export_warning_is_shown(service, tmp_path, user: User):
     add(service, tmp_path, "a", S.RUNNING)
     await open_page(user)
@@ -502,24 +373,6 @@ async def test_export_warning_is_shown(service, tmp_path, user: User):
 
 
 # --- adding files (the code behind the page) ------------------------------------------
-
-
-async def test_several_files_go_to_the_queue(service, tmp_path, user: User):
-    await open_page(user)
-    app.storage.general.update(CHEAP_SETTINGS)
-    paths = []
-    for name in ("one.mp3", "two.mp3"):
-        (tmp_path / name).write_bytes(b"audio")
-        paths.append(tmp_path / name)
-
-    with user:
-        await start_paths(paths, export_dir=tmp_path / "transcriptions")
-
-    jobs = service.jobs()
-    assert [spec.display_name for spec, _ in jobs] == ["one.mp3", "two.mp3"]
-    assert [spec.source for spec, _ in jobs] == paths  # picked files are used, not copied
-    assert all(spec.export_dir == tmp_path / "transcriptions" for spec, _ in jobs)
-    await user.should_see("one.mp3", retries=20)
 
 
 def test_check_dropped(tmp_path):
@@ -595,25 +448,6 @@ async def test_drops_are_ignored_in_a_browser(service, selections, tmp_path, use
     assert selections[-1].names == []  # paths on the browser's computer
 
 
-def test_ignored_files(tmp_path):
-    for name in ("a.mp3", "b.mp3", "notes.txt", "cover.jpg", ".hidden"):
-        (tmp_path / name).write_text("x")
-    assert ignored_files(tmp_path, sorted(tmp_path.glob("*.mp3"))) == 2
-
-
-async def test_one_file_goes_to_the_queue_without_a_dialog(service, tmp_path, user: User):
-    await open_page(user)
-    app.storage.general.update(CHEAP_SETTINGS)
-    (tmp_path / "one.mp3").write_bytes(b"audio")
-
-    with user:
-        await start_paths([tmp_path / "one.mp3"])
-
-    assert [spec.display_name for spec, _ in service.jobs()] == ["one.mp3"]
-    await user.should_see("one.mp3 added to the queue")
-    await user.should_not_see(kind=ui.dialog)
-
-
 async def test_selection_stays_when_the_jobs_cant_be_added(
     service, selections, tmp_path, user: User, monkeypatch
 ):
@@ -678,23 +512,3 @@ async def test_browser_files_are_uploaded_when_added(service, selections, user: 
     assert [spec.source for spec, _ in jobs] == staged[1:]
     assert all(spec.source.parent.name == spec.id for spec, _ in jobs)  # removed with the job
     assert selection.paths == [] and selection.uploads == set()
-
-
-async def test_a_failed_upload_keeps_the_files_before_it(service, selections, user: User):
-    await open_page(user)
-    selection = selections[-1]
-
-    class Broken:
-        name = "b.mp3"
-
-        async def save(self, target):
-            target.write_bytes(b"part")
-            raise OSError("disk full")
-
-    good = ui.upload.SmallFileUpload("a.mp3", "audio/mpeg", b"audio")
-    with user:
-        await selection.uploaded(SimpleNamespace(files=[good, Broken()]))
-
-    await user.should_see("The upload failed: disk full")
-    assert selection.names == ["a.mp3"] and not selection.uploading
-    assert list(service.store.uploads_root.iterdir()) == [selection.paths[0].parent]

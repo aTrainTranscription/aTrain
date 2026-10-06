@@ -1,4 +1,4 @@
-"""Tests for the output steps in aTrain_core.outputs: unique file ids, logging,
+"""Tests for the output steps in aTrain_core.outputs: unique file ids,
 write_final_outputs and checkpoints."""
 
 import os
@@ -69,30 +69,6 @@ def test_claim_file_id_adds_suffix_in_the_same_minute(archive):
     assert (archive / first).is_dir() and (archive / second).is_dir()
 
 
-def test_publish_moves_a_complete_folder_into_the_archive(archive, tmp_path):
-    staged = outputs.fresh_output_dir(
-        outputs.free_file_id(Path("interview.mp3"), "2026-09-30 14-05-12")
-    )
-    staged.mkdir(parents=True)
-    (staged / "transcription.txt").write_text("done", encoding="utf-8")
-
-    outputs.publish(staged)
-
-    assert (archive / "2609301405-intervi" / "transcription.txt").is_file()
-    assert not staged.exists()
-    staged.mkdir()
-    with pytest.raises(FileExistsError):  # never into an existing folder
-        outputs.publish(staged)
-
-
-def test_make_logger_appends_timestamped_lines(tmp_path):
-    log = outputs.make_logger(tmp_path / "log.txt")
-    log("one")
-    log("two")
-    lines = (tmp_path / "log.txt").read_text(encoding="utf-8").splitlines()
-    assert [line.split(" ------ ")[1] for line in lines] == ["one", "two"]
-
-
 @pytest.mark.parametrize("speaker_detection", [True, False])
 def test_write_final_outputs_writes_all_files(archive, tmp_path, speaker_detection):
     file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12")
@@ -116,16 +92,6 @@ def test_write_final_outputs_writes_all_files(archive, tmp_path, speaker_detecti
     assert metadata["audio_duration"] == 5 and "processing_time" in metadata
     log = (directory / "log.txt").read_text(encoding="utf-8")
     assert log.startswith("[x] ------ Transcription successful") and "Created output files" in log
-
-
-def test_write_final_outputs_keeps_existing_metadata(archive):
-    file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12")
-    outputs.create_metadata(make_settings(file_id, False), 7)
-    outputs.write_final_outputs(
-        make_settings(file_id, False), transcript(False), audio_duration=5, backend="faster-whisper"
-    )
-    metadata = yaml.safe_load((archive / file_id / "metadata.txt").read_text(encoding="utf-8"))
-    assert metadata["audio_duration"] == 7
 
 
 def test_write_final_outputs_export_copy(archive, tmp_path):

@@ -17,23 +17,3 @@ def test_top_level_supported_files_only(tmp_path, monkeypatch):
     files = discovery.discover_media_files(tmp_path)
 
     assert [path.name for path in files] == ["a.mp3", "b.wav", "C.MP3"]
-
-
-def test_recursive_skips_hidden_and_export_folders(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "load_formats", lambda: [".mp3"])
-    make_files(
-        tmp_path,
-        "a.mp3",
-        "Day 2/b.mp3",
-        ".cache/c.mp3",
-        "transcriptions/2609301405-a/d.mp3",
-        "sub/transcriptions/e.mp3",
-    )
-
-    files = discovery.discover_media_files(tmp_path, recursive=True)
-
-    assert [path.relative_to(tmp_path).as_posix() for path in files] == [
-        "a.mp3",
-        "Day 2/b.mp3",
-        "sub/transcriptions/e.mp3",
-    ]

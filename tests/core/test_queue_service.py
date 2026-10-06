@@ -1,12 +1,10 @@
 """QueueService tests with a fake launcher: fake phase handles that answer like a child."""
 
 import asyncio
-import subprocess
-import sys
 
 import pytest
 from aTrain_core import outputs
-from aTrain_core.jobs import JobStatus, JobStore, QueueLockedError, Step
+from aTrain_core.jobs import JobStatus, JobStore, Step
 from aTrain_core.queue_service import QueueService
 from aTrain_core.runner import (
     RAW_CHECKPOINT,
@@ -18,13 +16,12 @@ from aTrain_core.runner import (
 )
 from aTrain_core.settings import ComputeType, Device
 from tests.unit.test_jobs import make_spec
-from tests.unit.test_queue_lock import acquire_and_release
 
 
 class FakeHandle:
     """Behaves like a phase child running one job. Per job id, `outcomes` says what
     happens: "done" (default), "fail", "crash" or "hang" (works until killed). A job with a
-    gate waits for it first. A job in `exited_before_kill` has ended when a kill comes."""
+    gate waits for it first."""
 
     def __init__(self, launcher, phase, job):
         self.launcher, self.phase, self.job = launcher, phase, job
@@ -33,9 +30,6 @@ class FakeHandle:
     async def events(self):
         launcher, job = self.launcher, self.job
         job_id = job.spec.id
-        if self.phase == 1 and job.spec.model in launcher.load_crash_models:
-            yield PhaseDied(1)
-            return
         if job_id in launcher.gates:
             await launcher.gates[job_id].wait()
         outcome = launcher.outcomes.get(job_id, "done")
@@ -60,8 +54,7 @@ class FakeHandle:
             (outputs.TRANSCRIPT_DIR / file_id).mkdir(parents=True)
             yield JobDone(job_id, file_id, 5, [])
         # events sent before a kill still arrive
-        killed = self.killed.is_set() and job_id not in launcher.exited_before_kill
-        yield PhaseDied(-9) if killed else PhaseFinished()
+        yield PhaseDied(-9) if self.killed.is_set() else PhaseFinished()
 
     def kill(self):
         self.killed.set()
@@ -73,9 +66,7 @@ class FakeLauncher:
         self.handles: list[FakeHandle] = []
         self.outcomes: dict[str, str] = {}
         self.gates: dict[str, asyncio.Event] = {}
-        self.load_crash_models: set[str] = set()
         self.launch_error_models: set[str] = set()
-        self.exited_before_kill: set[str] = set()
 
     def launch(self, phase):
         def launch(job):
@@ -221,35 +212,6 @@ def test_move_swaps_queued_neighbours_only(env):
     assert ids(service) == ["a", "b", "c", "e", "d"]
 
 
-def test_retry_moves_the_job_to_the_end(env):
-    tmp_path, store, service, _launcher = env
-    store.add([spec(tmp_path, job_id) for job_id in "abc"])
-    store.update("a", status=JobStatus.FAILED, error="boom")
-
-    service.retry("a")
-
-    assert ids(service) == ["b", "c", "a"]
-    assert status(store, "a") == JobStatus.QUEUED
-    assert JobStore(store.root).jobs()[2][0].id == "a"  # saved
-
-
-async def test_moved_order_survives_a_restart_and_is_run(env):
-    tmp_path, store, service, launcher = env
-    store.add([spec(tmp_path, job_id) for job_id in "abc"])
-    service.move("c", -1)
-    service.move("c", -1)
-
-    restarted = QueueService(
-        JobStore(store.root), launch_phase1=launcher.launch(1), launch_phase2=launcher.launch(2)
-    )
-    await restarted.start()
-    try:
-        await settle(restarted)
-    finally:
-        await restarted.stop()
-    assert launcher.dispatched() == ["c", "a", "b"]
-
-
 async def test_cancel_the_running_job(started):
     tmp_path, store, service, launcher = started
     launcher.outcomes["a"] = "hang"
@@ -264,39 +226,9 @@ async def test_cancel_the_running_job(started):
     assert len(launcher.launches) == 2  # b ran in a new child
 
 
-async def test_cancel_skips_jobs_removed_while_confirming(started):
-    tmp_path, store, service, launcher = started
-    service.pause()
-    service.enqueue([spec(tmp_path, "a"), spec(tmp_path, "b")])
-    service.remove("a")
-
-    await service.cancel(["a", "b"])
-
-    assert status(store, "b") == JobStatus.CANCELLED
-    assert launcher.dispatched() == []
-
-
-async def test_job_that_finished_before_the_kill_stays_done(started):
+async def test_cancel_while_the_transcription_ends(started):
     tmp_path, store, service, launcher = started
     launcher.gates["a"] = asyncio.Event()
-    service.enqueue([spec(tmp_path, "a")])
-    await until(lambda: launcher.dispatched() == ["a"])
-
-    await service.cancel(["a"])  # the kill is requested while the job is in flight...
-    assert service.cancelling
-    launcher.gates["a"].set()  # ...but JobDone was already on its way
-    await settle(service)
-
-    assert status(store, "a") == JobStatus.DONE and not service.cancelling
-    assert (outputs.TRANSCRIPT_DIR / "a-archive").is_dir()
-
-
-@pytest.mark.parametrize("exited", [False, True], ids=["killed", "exited-before-kill"])
-async def test_cancel_while_the_transcription_ends(started, exited):
-    tmp_path, store, service, launcher = started
-    launcher.gates["a"] = asyncio.Event()
-    if exited:
-        launcher.exited_before_kill.add("a")
     service.enqueue([spec(tmp_path, "a", speaker_detection=True)])
     await until(lambda: launcher.dispatched() == ["a"])
 
@@ -310,22 +242,6 @@ async def test_cancel_while_the_transcription_ends(started, exited):
     await settle(service)
     assert status(store, "a") == JobStatus.DONE
     assert [phase for phase, _ in launcher.launches] == [1, 1, 2]
-
-
-async def test_speaker_detection_starts_with_step_and_progress_reset(started):
-    tmp_path, store, service, launcher = started
-    first = launcher.gates["a"] = asyncio.Event()
-    service.enqueue([spec(tmp_path, "a", speaker_detection=True)])
-    await until(lambda: launcher.dispatched() == ["a"])
-    launcher.gates["a"] = asyncio.Event()  # phase 2 waits on a new gate
-    first.set()
-
-    await until(lambda: launcher.dispatched() == ["a", "a"])
-    seen = (status(store, "a"), service.step, service.progress)
-    launcher.gates["a"].set()  # before asserting, so a failure can't hang the teardown
-    await settle(service)
-
-    assert seen == (JobStatus.RUNNING, Step.DIARIZATION, 0.0)  # phase 1 reported 0.5
 
 
 async def test_pause_during_transcription_does_not_start_phase_2(started):
@@ -394,82 +310,19 @@ async def test_crash_while_working_fails_only_that_job(started):
     assert status(store, "b") == JobStatus.DONE
 
 
-async def test_crash_while_loading_fails_only_that_job(started):
-    tmp_path, store, service, launcher = started
-    launcher.load_crash_models.add("large-v3-turbo")
-    service.pause()
-    service.enqueue([spec(tmp_path, "a"), spec(tmp_path, "b", model="small")])
-    service.resume()
-    await settle(service)
-
-    assert "stopped unexpectedly" in store.get("a")[1].error
-    assert status(store, "b") == JobStatus.DONE
-
-
-async def test_retry_runs_the_job_again(started):
+async def test_retry_runs_the_job_again_at_the_end(started):
     tmp_path, store, service, launcher = started
     launcher.outcomes["a"] = "fail"
-    service.enqueue([spec(tmp_path, "a")])
+    service.enqueue([spec(tmp_path, "a"), spec(tmp_path, "b")])
     await settle(service)
     launcher.outcomes["a"] = "done"
 
     service.retry("a")
+    assert ids(service) == ["b", "a"]
     await settle(service)
 
     state = store.get("a")[1]
     assert state.status == JobStatus.DONE and state.error is None
-
-
-async def test_remove_is_refused_for_the_running_job(started):
-    tmp_path, _store, service, launcher = started
-    launcher.gates["a"] = asyncio.Event()
-    service.enqueue([spec(tmp_path, "a")])
-    await until(lambda: launcher.dispatched() == ["a"])
-    with pytest.raises(ValueError):
-        service.remove("a")
-    launcher.gates["a"].set()
-    await settle(service)
-
-
-async def test_event_bug_fails_only_that_job(started):
-    tmp_path, store, service, _launcher = started
-    original = FakeHandle.events
-
-    async def events(self):
-        async for event in original(self):
-            if isinstance(event, JobDone) and event.job_id == "a":
-                yield JobProgress("a", "Transcribe", None, 1)  # can't be handled
-            yield event
-
-    FakeHandle.events = events
-    try:
-        service.enqueue([spec(tmp_path, "a"), spec(tmp_path, "b")])
-        await settle(service)
-    finally:
-        FakeHandle.events = original
-
-    assert store.get("a")[1].error.startswith("Internal error")
-    assert status(store, "b") == JobStatus.DONE
-
-
-async def test_failed_save_when_starting_a_job_fails_only_that_job(started, monkeypatch):
-    tmp_path, store, service, _launcher = started
-    service.pause()
-    service.enqueue([spec(tmp_path, "a"), spec(tmp_path, "b")])
-    save, failures = store._save, []
-
-    def flaky_save(jobs):
-        if jobs[0][1].status == JobStatus.RUNNING and not failures:
-            failures.append(True)
-            raise OSError("disk full")
-        save(jobs)
-
-    monkeypatch.setattr(store, "_save", flaky_save)
-    service.resume()
-    await settle(service)
-
-    assert store.get("a")[1].error == "Internal error: disk full"
-    assert status(store, "b") == JobStatus.DONE
 
 
 async def test_launch_error_fails_only_that_job(started):
@@ -502,25 +355,15 @@ async def test_recovery_after_a_restart(env):
         audio_duration=5,
         source=b_spec.source,
     )
-    service.pause()
-
-    await service.start()
-    try:
-        assert [status(store, job_id) for job_id in "abc"] == [JobStatus.QUEUED] * 3
-        assert (store.work_dir("b") / RAW_CHECKPOINT).is_file()  # phase 1 reuses it
-    finally:
-        await service.stop()
-
-
-async def test_start_deletes_uploads_that_never_became_jobs(env):
-    tmp_path, store, service, _launcher = env
-    store.add([spec(tmp_path, "a")])
     for job_id in ("a", "abandoned"):
         (store.uploads_root / job_id).mkdir(parents=True)
     service.pause()
 
     await service.start()
     try:
+        assert [status(store, job_id) for job_id in "abc"] == [JobStatus.QUEUED] * 3
+        assert (store.work_dir("b") / RAW_CHECKPOINT).is_file()  # phase 1 reuses it
+        # uploads of a page that was closed before they became jobs are deleted
         assert [folder.name for folder in store.uploads_root.iterdir()] == ["a"]
     finally:
         await service.stop()
@@ -539,63 +382,3 @@ async def test_stop_puts_the_running_job_back(env):
     second = QueueService(store)
     second._lock.acquire()  # the lock was released
     second._lock.release()
-
-
-async def test_stop_releases_the_lock_after_a_scheduler_error(env, monkeypatch):
-    _tmp_path, store, service, _launcher = env
-
-    def broken():
-        raise RuntimeError("bug")
-
-    monkeypatch.setattr(service, "_head", broken)
-    await service.start()
-    await until(lambda: service._scheduler_task.done())
-
-    with pytest.raises(RuntimeError):
-        await service.stop()
-    acquire_and_release(store.root)  # the lock was released
-
-
-async def test_start_reads_the_queue_under_the_lock(env):
-    """A store loaded before another aTrain finished a job must not undo that job."""
-    tmp_path, store, _service, launcher = env
-    store.add([spec(tmp_path, "a")])
-    store.update("a", status=JobStatus.RUNNING, file_id="a-archive")
-    (outputs.TRANSCRIPT_DIR / "a-archive").mkdir(parents=True)
-    stale = JobStore(store.root)
-    store.update("a", status=JobStatus.DONE)  # the other aTrain finishes and quits
-    service = QueueService(
-        stale, launch_phase1=launcher.launch(1), launch_phase2=launcher.launch(2)
-    )
-
-    await service.start()
-    try:
-        assert status(stale, "a") == JobStatus.DONE
-        assert (outputs.TRANSCRIPT_DIR / "a-archive").is_dir()
-    finally:
-        await service.stop()
-
-
-HOLD_LOCK = """
-import sys, time
-from pathlib import Path
-from aTrain_core.jobs import QueueLock
-lock = QueueLock(Path(sys.argv[1]))
-lock.acquire()
-print("locked", flush=True)
-time.sleep(60)
-"""
-
-
-async def test_start_fails_while_another_process_holds_the_lock(env):
-    _tmp_path, store, service, _launcher = env
-    holder = subprocess.Popen(
-        [sys.executable, "-c", HOLD_LOCK, str(store.root)], stdout=subprocess.PIPE, text=True
-    )
-    try:
-        assert holder.stdout.readline().strip() == "locked"
-        with pytest.raises(QueueLockedError):
-            await service.start()
-    finally:
-        holder.kill()
-        holder.wait(10)

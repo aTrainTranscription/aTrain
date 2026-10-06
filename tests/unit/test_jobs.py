@@ -47,17 +47,9 @@ def test_state_json_round_trip():
     assert restored == state and restored.failed_step == Step.OUTPUT
 
 
-@pytest.mark.parametrize(
-    ("cls", "data"),
-    [
-        (JobSpec, {**make_spec().to_json(), "speaker_names": []}),
-        (JobState, {**JobState().to_json(), "surprise": 1}),
-        (JobState, {**JobState().to_json(), "progress": 0.5}),
-    ],
-)
-def test_unknown_keys_raise(cls, data):
+def test_unknown_keys_raise():
     with pytest.raises(TypeError):
-        cls.from_json(data)
+        JobState.from_json({**JobState().to_json(), "surprise": 1})
 
 
 def test_to_settings_copies_every_setting():

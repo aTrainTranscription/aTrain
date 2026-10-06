@@ -27,7 +27,7 @@ async def test_main_page_renders(user: User):
 CHEAP_SETTINGS = {
     "model": "tiny",
     "language": "auto-detect",
-    "speaker_detection": False,
+    "speaker_detection": True,  # so the job runs through both phase children
     "speaker_count": 0,
     "GPU": False,
     "compute_type": "int8",

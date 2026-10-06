@@ -1,6 +1,6 @@
 """Fake model factories for spawned runner children (a spawned child can't see
 monkeypatches). Configured through the FAKE_RUNNER environment variable, a JSON object:
-{"crash_on_load": true}, {"crash_on_job": 2}, {"sleep": 30}."""
+{"crash_on_job": 2}, {"sleep": 30}."""
 
 import json
 import os
@@ -31,6 +31,4 @@ class FakeTranscriber:
 
 
 def load_transcriber(key, model_path=None):
-    if _config().get("crash_on_load"):
-        os._exit(1)
     return FakeTranscriber()

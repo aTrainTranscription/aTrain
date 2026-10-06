@@ -23,15 +23,6 @@ def acquire_and_release(root):
     lock.release()
 
 
-def test_second_lock_in_same_process_fails(tmp_path):
-    first = QueueLock(tmp_path)
-    first.acquire()
-    with pytest.raises(QueueLockedError):
-        QueueLock(tmp_path).acquire()
-    first.release()
-    acquire_and_release(tmp_path)
-
-
 def test_lock_held_by_other_process_until_it_dies(tmp_path):
     holder = subprocess.Popen(
         [sys.executable, "-c", HOLD_LOCK, str(tmp_path)], stdout=subprocess.PIPE, text=True

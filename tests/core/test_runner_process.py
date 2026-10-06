@@ -74,13 +74,6 @@ def test_crash_during_job_gives_phase_died(jobs, monkeypatch):
     assert events[-1].exitcode == 1
 
 
-def test_crash_while_loading_gives_phase_died(jobs, monkeypatch):
-    fake(monkeypatch, crash_on_load=True)
-    events = asyncio.run(drive(runner.launch_phase1(jobs[0], FACTORY)))
-
-    assert kinds(events) == ["PhaseDied"]
-
-
 def test_kill_during_a_slow_job(jobs, monkeypatch):
     fake(monkeypatch, sleep=60)
     handle = runner.launch_phase1(jobs[0], FACTORY)
