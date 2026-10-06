@@ -11,7 +11,7 @@ import multiprocessing
 import os
 import threading
 import time
-from collections.abc import AsyncIterator, Callable, Iterator, MutableMapping
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field
 from multiprocessing.connection import Connection
@@ -97,20 +97,20 @@ class Channel(Protocol):
     def send(self, event: Any) -> None: ...
 
 
-class EventProgress(MutableMapping):
+class EventProgress(dict):
     """A progress dict that the existing progress code writes to, sent to the parent as
     JobProgress events, at most every `interval` seconds. flush() sends the last value."""
 
     def __init__(self, channel: Channel, job_id: str, interval: float = 0.2, clock=time.monotonic):
-        self._data: dict[str, Any] = {"task": "", "current": 0, "total": 1}
+        super().__init__(task="", current=0, total=1)
         self._channel, self._job_id = channel, job_id
         self._interval, self._clock = interval, clock
         self._last_sent = float("-inf")
         self._pending = False
 
     def __setitem__(self, key: str, value: Any) -> None:
-        task_changed = key == "task" and value != self._data.get("task")
-        self._data[key] = value
+        task_changed = key == "task" and value != self.get("task")
+        super().__setitem__(key, value)
         self._pending = True
         if task_changed or self._clock() - self._last_sent >= self._interval:
             self.flush()
@@ -118,21 +118,8 @@ class EventProgress(MutableMapping):
     def flush(self) -> None:
         if not self._pending:
             return
-        data = self._data
-        self._channel.send(JobProgress(self._job_id, data["task"], data["current"], data["total"]))
+        self._channel.send(JobProgress(self._job_id, self["task"], self["current"], self["total"]))
         self._last_sent, self._pending = self._clock(), False
-
-    def __getitem__(self, key: str) -> Any:
-        return self._data[key]
-
-    def __delitem__(self, key: str) -> None:
-        del self._data[key]
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._data)
-
-    def __len__(self) -> int:
-        return len(self._data)
 
 
 class CheckpointMissingError(Exception):

@@ -136,8 +136,9 @@ class QueueService:
             raise ValueError("The job is running; cancel it first")
         self.store.remove(job_id)
 
-    def clear_finished(self) -> None:
-        self.store.clear_finished()
+    def clear_finished(self, job_ids: list[str]) -> None:
+        """Remove those of the jobs that are still finished."""
+        self.store.clear_finished(job_ids)
 
     def move(self, job_id: str, delta: int) -> None:
         """Swap a queued job with its queued neighbour (delta -1 up, +1 down). Running and

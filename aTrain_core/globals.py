@@ -1,10 +1,11 @@
+import json
 import multiprocessing as mp
 import os
 import platform
 from importlib.resources import files
 from importlib.util import find_spec
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from platformdirs import user_data_path, user_documents_path
 
@@ -81,6 +82,26 @@ TRANSCRIPT_DIR = ATRAIN_DIR / "transcriptions"
 METADATA_FILENAME = "metadata.txt"
 LOG_FILENAME = "log.txt"
 TIMESTAMP_FORMAT = "%Y-%m-%d %H-%M-%S"
+DURATION_FORMAT = "{:02}:{:02}:{:02}"  # hours, minutes, seconds; hours may exceed 24
+
+
+def hms(seconds: float) -> str:
+    """Seconds as hh:mm:ss (DURATION_FORMAT)."""
+    seconds = int(seconds)
+    return DURATION_FORMAT.format(seconds // 3600, seconds % 3600 // 60, seconds % 60)
+
+
+def write_json_atomic(path: Path, data: Any, **dump_options) -> None:
+    """Write `data` so a reader sees the old file or the complete new one, also after a crash."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, **dump_options)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 SAMPLING_RATE = 16000
 DEFAULT_CPU_THREADS = max(1, count - 1) if (count := os.cpu_count()) else 4
 MAX_CPU_THREADS = os.cpu_count() or DEFAULT_CPU_THREADS

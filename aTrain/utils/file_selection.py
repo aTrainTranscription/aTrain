@@ -6,8 +6,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from aTrain.utils import flatpak_portal
+from aTrain.utils.flatpak_portal import pick_native
 from aTrain_core.globals import FLATPAK
-from aTrain_core.settings import load_formats
+from aTrain_core.settings import allowed_extensions, load_formats
 from nicegui import app, events, run, ui
 
 
@@ -148,7 +149,7 @@ def check_dropped(paths: list[Path]) -> tuple[list[Path], list[Path], list[str]]
     can't be read (outside a Flatpak's sandbox) and the names of other files."""
     from aTrain_core.discovery import discover_media_files
 
-    allowed = {extension.lower() for extension in load_formats()}
+    allowed = allowed_extensions()
     files, unreadable, unsupported = [], [], []
     for path in paths:
         if path.suffix and path.suffix.lower() not in allowed and not path.is_dir():
@@ -180,72 +181,3 @@ async def pick_in_window(folder: bool) -> list[str]:
             webview.FileDialog.OPEN, allow_multiple=True, file_types=(types,)
         )
     return list(result or [])
-
-
-def pick_native(directory: bool, folder: Path | None = None) -> list[str]:
-    """The desktop portal's file chooser (Linux/Flatpak), which returns real paths.
-    `folder`: where it opens (ignored by portals older than version 3)."""
-    try:
-        import gi  # type: ignore
-
-        gi.require_version("Gio", "2.0")
-        gi.require_version("GLib", "2.0")
-        from gi.repository import Gio, GLib  # type: ignore
-
-        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-        proxy = Gio.DBusProxy.new_sync(
-            bus,
-            Gio.DBusProxyFlags.NONE,
-            None,
-            "org.freedesktop.portal.Desktop",
-            "/org/freedesktop/portal/desktop",
-            "org.freedesktop.portal.FileChooser",
-            None,
-        )
-
-        token = f"atrain{os.getpid()}"
-        options = {
-            "handle_token": GLib.Variant("s", token),
-            "multiple": GLib.Variant("b", not directory),
-            "directory": GLib.Variant("b", directory),
-        }
-        if folder is not None:  # a null-terminated byte string
-            options["current_folder"] = GLib.Variant("ay", os.fsencode(folder) + b"\0")
-
-        result = proxy.call_sync(
-            "OpenFile",
-            GLib.Variant(
-                "(ssa{sv})", ("", "Select Folder" if directory else "Select Files", options)
-            ),
-            Gio.DBusCallFlags.NONE,
-            -1,
-            None,
-        )
-        handle = result.unpack()[0]
-
-        request = Gio.DBusProxy.new_sync(
-            bus,
-            Gio.DBusProxyFlags.NONE,
-            None,
-            "org.freedesktop.portal.Desktop",
-            handle,
-            "org.freedesktop.portal.Request",
-            None,
-        )
-
-        filenames: list[str] = []
-        loop = GLib.MainLoop()
-
-        def on_response(_proxy, _sender, _signal, params):
-            response, results = params.unpack()
-            if response == 0:
-                for uri in results.get("uris") or []:
-                    filenames.append(Gio.File.new_for_uri(uri).get_path())
-            loop.quit()
-
-        request.connect("g-signal", on_response)
-        loop.run()
-        return filenames
-    except Exception as exc:
-        print(f"Flatpak portal file dialog failed: {exc}")
-        return []

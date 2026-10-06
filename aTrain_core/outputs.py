@@ -18,6 +18,7 @@ from aTrain_core.globals import (
     METADATA_FILENAME,
     TIMESTAMP_FORMAT,
     TRANSCRIPT_DIR,
+    write_json_atomic,
 )
 from aTrain_core.settings import Settings
 
@@ -304,13 +305,7 @@ def write_checkpoint(
         "audio_duration": audio_duration,
         "transcript": transcript,
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    write_json_atomic(path, data)
 
 
 def read_checkpoint(

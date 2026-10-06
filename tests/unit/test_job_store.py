@@ -76,16 +76,18 @@ def test_remove_deletes_work_folder_and_staged_upload_only(tmp_path):
     assert outside.exists()
 
 
-def test_clear_finished_keeps_active_jobs(tmp_path):
+def test_clear_finished_removes_only_the_given_jobs_that_are_still_finished(tmp_path):
     store = JobStore(tmp_path)
-    store.add([make_spec(id=job_id, speaker_detection=False) for job_id in "abcd"])
-    for job_id in "abc":
+    store.add([make_spec(id=job_id, speaker_detection=False) for job_id in "abcde"])
+    for job_id in "abce":
         store.update(job_id, status=JobStatus.RUNNING)
     store.update("a", status=JobStatus.DONE)
     store.update("b", status=JobStatus.FAILED)
+    store.update("e", status=JobStatus.FAILED)  # finished after the list was shown
 
-    store.clear_finished()
-    assert ids(store) == ["c", "d"]
+    store.clear_finished(["a", "b", "c", "d", "gone"])  # c is running again, d queued
+
+    assert ids(store) == ["c", "d", "e"]
 
 
 def test_clear_finished_saves_once_and_deletes_work_folders(tmp_path, monkeypatch):
@@ -97,7 +99,7 @@ def test_clear_finished_saves_once_and_deletes_work_folders(tmp_path, monkeypatc
     saves = []
     monkeypatch.setattr(store, "_save", lambda jobs: saves.append([spec.id for spec, _ in jobs]))
 
-    store.clear_finished()
+    store.clear_finished(["a", "b"])
 
     assert saves == [["c"]]
     assert not store.work_dir("a").exists() and not store.work_dir("b").exists()
@@ -137,7 +139,7 @@ def test_failed_save_preserves_memory_disk_and_files(tmp_path, monkeypatch, oper
         "update": lambda: store.update("a", status=JobStatus.QUEUED, error="changed"),
         "move": lambda: store.move("a", 1),
         "remove": lambda: store.remove("a"),
-        "clear_finished": store.clear_finished,
+        "clear_finished": lambda: store.clear_finished(["a", "b"]),
     }
     with pytest.raises(OSError, match="disk full"):
         actions[operation]()

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import shutil
+from collections.abc import Collection
 from dataclasses import dataclass, field, fields, replace
 from datetime import datetime
 from enum import StrEnum, auto
@@ -16,6 +17,7 @@ from typing import Any
 
 from filelock import FileLock, Timeout
 
+from aTrain_core.globals import write_json_atomic
 from aTrain_core.settings import ComputeType, Device, ModelKey, Settings
 
 SCHEMA_VERSION = 1
@@ -192,9 +194,14 @@ class JobStore:
         self._jobs = jobs
         self._delete_files(job_id)
 
-    def clear_finished(self) -> None:
-        finished = [spec.id for spec, state in self._jobs if state.status in FINAL_STATUSES]
-        jobs = [job for job in self._jobs if job[1].status not in FINAL_STATUSES]
+    def clear_finished(self, job_ids: Collection[str]) -> None:
+        """Remove the entries of `job_ids` that are still finished, with their files."""
+        finished = [
+            spec.id
+            for spec, state in self._jobs
+            if spec.id in job_ids and state.status in FINAL_STATUSES
+        ]
+        jobs = [job for job in self._jobs if job[0].id not in finished]
         self._save(jobs)
         self._jobs = jobs
         for job_id in finished:
@@ -233,17 +240,11 @@ class JobStore:
 
     def _save(self, jobs: list[tuple[JobSpec, JobState]]) -> None:
         """Persist a proposed change before exposing it to readers or deleting files."""
-        self.root.mkdir(parents=True, exist_ok=True)
         data = {
             "schema_version": SCHEMA_VERSION,
             "jobs": [{"spec": spec.to_json(), "state": state.to_json()} for spec, state in jobs],
         }
-        tmp = self.path.with_name(QUEUE_FILENAME + ".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, self.path)
+        write_json_atomic(self.path, data, indent=2)
 
 
 class QueueLockedError(Exception):

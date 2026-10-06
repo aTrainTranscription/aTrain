@@ -1,12 +1,13 @@
 """The queue on the transcribe page: the running job, the controls and the list of all
 other jobs with their actions."""
 
-import inspect
+import asyncio
+from contextlib import suppress
 from datetime import datetime
 
 from aTrain.components.dialogs.error import dialog_error
 from aTrain.utils.archive import download_file_directory, open_file_directory
-from aTrain_core.globals import TIMESTAMP_FORMAT
+from aTrain_core.globals import TIMESTAMP_FORMAT, hms
 from aTrain_core.jobs import FINAL_STATUSES, JobStatus, Step
 from nicegui import app, ui
 
@@ -23,15 +24,17 @@ ICONS = {
     JobStatus.FAILED: ("error", "text-red-700"),
     JobStatus.CANCELLED: ("block", "text-dark"),
 }
-WHITE = 'unelevated no-caps size=13px padding="6px 12px" color=white text-color=dark'
+BUTTON = 'unelevated no-caps size=13px padding="6px 12px"'
+WHITE = f"{BUTTON} color=white text-color=dark"
+DARK = f"{BUTTON} color=dark"
+LIGHT = f"{BUTTON} color=gray-100 text-color=dark"
 ROW_BUTTON = "flat round dense size=sm color=dark"
 
 
 def elapsed(started_at: str | None) -> str:
     if not started_at:
         return ""
-    s = int((datetime.now() - datetime.strptime(started_at, TIMESTAMP_FORMAT)).total_seconds())
-    return f"{s // 3600:02}:{s % 3600 // 60:02}:{s % 60:02}"
+    return hms((datetime.now() - datetime.strptime(started_at, TIMESTAMP_FORMAT)).total_seconds())
 
 
 def running_job(jobs):
@@ -79,9 +82,7 @@ def queue_status(service):
                     on_click=lambda: service.resume() if service.paused else service.pause()
                 ).props(WHITE)
                 stop = ui.button("Stop", on_click=lambda: ask_stop()).props(WHITE)
-                stop_all = ui.button("Stop all", on_click=lambda: ask_stop_all()).props(
-                    'unelevated no-caps size=13px padding="6px 12px" color=dark'
-                )
+                stop_all = ui.button("Stop all", on_click=lambda: ask_stop_all()).props(DARK)
         summary.mark("queue_summary")
         pause.mark("pause_queue")
         stop.mark("stop_job")
@@ -91,12 +92,8 @@ def queue_status(service):
         ) as confirm_bar:
             confirm_text = ui.label().classes("text-sm whitespace-pre-line")
             with ui.row().classes("gap-2 no-wrap"):
-                ui.button("Back", on_click=lambda: close_confirm()).props(
-                    'unelevated no-caps size=13px padding="6px 12px" color=gray-100 text-color=dark'
-                )
-                confirm_ok = ui.button(on_click=lambda: do_confirm()).props(
-                    'unelevated no-caps size=13px padding="6px 12px" color=dark'
-                )
+                ui.button("Back", on_click=lambda: answer(False)).props(LIGHT)
+                confirm_ok = ui.button(on_click=lambda: answer(True)).props(DARK)
                 confirm_ok.mark("confirm_ok")
         job_list_box = ui.column().classes("w-full bg-white rounded-md gap-0 -mt-1")
     panel.mark("queue_status")
@@ -104,46 +101,40 @@ def queue_status(service):
 
     # --- confirmation bar ---------------------------------------------------------------
 
-    pending = {"action": None}
+    question: asyncio.Future | None = None
 
-    def ask(text: str, ok: str, action) -> None:
-        pending["action"] = action
+    async def confirm(text: str, ok: str) -> bool:
+        """Ask in the bar; a new question replaces an open one (which answers No)."""
+        nonlocal question
+        if question is not None:
+            question.set_result(False)
+        question = asked = asyncio.get_running_loop().create_future()
         confirm_text.text, confirm_ok.text = text, ok
         confirm_bar.set_visibility(True)
+        return await asked
 
-    def close_confirm() -> None:
-        pending["action"] = None
+    def answer(value: bool) -> None:
+        nonlocal question
+        if question is not None:
+            question.set_result(value)
+            question = None
         confirm_bar.set_visibility(False)
 
-    async def do_confirm() -> None:
-        action = pending["action"]
-        close_confirm()
-        if action is None:
-            return
-        try:
-            result = action()
-            if inspect.isawaitable(result):
-                await result
-        except KeyError:
-            pass  # the job was removed meanwhile
-        job_list.refresh()
-
-    def ask_stop() -> None:
-        jobs = service.jobs()
-        running = running_job(jobs)
+    async def ask_stop() -> None:
+        running = running_job(service.jobs())
         if running is not None:
             spec = running[0]
-            ask(
-                f"Stop transcribing {spec.display_name}?",
-                "Stop job",
-                lambda: service.cancel([spec.id]),
-            )
+            if await confirm(f"Stop transcribing {spec.display_name}?", "Stop job"):
+                await service.cancel([spec.id])
+                update()
 
-    def ask_stop_all() -> None:
+    async def ask_stop_all() -> None:
         ids = [spec.id for spec, state in service.jobs() if state.status not in FINAL_STATUSES]
-        ask(f"Stop all {len(ids)} unfinished jobs?", "Stop all", lambda: service.cancel(ids))
+        if await confirm(f"Stop all {len(ids)} unfinished jobs?", "Stop all"):
+            await service.cancel(ids)
+            update()
 
-    def ask_remove(spec, status: JobStatus) -> None:
+    async def ask_remove(spec, status: JobStatus) -> None:
         name = spec.display_name
         if status == JobStatus.DONE:
             text = f"Remove {name}? The transcript stays in the archive."
@@ -151,9 +142,12 @@ def queue_status(service):
             text = f"Remove {name} from the queue?"
         if (service.store.uploads_root / spec.id).exists():
             text += "\nThe uploaded file will be deleted."
-        ask(text, "Remove", lambda: service.remove(spec.id))
+        if await confirm(text, "Remove"):
+            with suppress(KeyError):  # the job was removed meanwhile
+                service.remove(spec.id)
+            update()
 
-    def ask_clear_finished() -> None:
+    async def ask_clear_finished() -> None:
         finished = [spec for spec, state in service.jobs() if state.status in FINAL_STATUSES]
         uploads = sum((service.store.uploads_root / spec.id).exists() for spec in finished)
         text = (
@@ -162,7 +156,9 @@ def queue_status(service):
         if uploads:
             jobs = plural(uploads, "failed or cancelled job")
             text += f"\nThis also deletes the uploaded files of {jobs}."
-        ask(text, "Clear", service.clear_finished)
+        if await confirm(text, "Clear"):  # only these jobs, not ones that finished meanwhile
+            service.clear_finished([spec.id for spec in finished])
+            update()
 
     # --- job list -----------------------------------------------------------------------
 
@@ -176,11 +172,11 @@ def queue_status(service):
 
     def retry(job_id: str) -> None:
         service.retry(job_id)
-        job_list.refresh()
+        update()
 
     def move(job_id: str, delta: int) -> None:
         service.move(job_id, delta)
-        job_list.refresh()
+        update()
 
     def show_error(spec, state) -> None:
         with panel:  # not in the list, so a refresh of the list keeps the dialog
@@ -218,7 +214,7 @@ def queue_status(service):
         if any(state.status in FINAL_STATUSES for _, state in rows):
             with ui.row().classes("px-3.5 py-2"):
                 ui.button("Clear finished", icon="clear_all", on_click=ask_clear_finished).props(
-                    'unelevated no-caps size=13px padding="6px 12px" color=gray-100 text-color=dark'
+                    LIGHT
                 )
 
     def job_row(spec, state, queued: list[str]) -> None:

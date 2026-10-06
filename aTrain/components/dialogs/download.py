@@ -4,6 +4,7 @@ from multiprocessing.managers import DictProxy
 from pathlib import Path
 from typing import cast
 
+from aTrain_core.globals import hms
 from nicegui import ElementFilter, app, ui
 from nicegui.run import tear_down as stop_download
 
@@ -43,9 +44,4 @@ def close_dialog_download():
 
 
 def update_time(start_time: datetime):
-    state = app.storage.general
-    timedelta = datetime.now() - start_time
-    total_seconds = int(timedelta.total_seconds())
-    hours, remainder = divmod(total_seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    state["time"] = f"{hours:02}:{minutes:02}:{seconds:02}"
+    app.storage.general["time"] = hms((datetime.now() - start_time).total_seconds())

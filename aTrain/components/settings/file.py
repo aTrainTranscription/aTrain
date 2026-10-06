@@ -19,9 +19,8 @@ DRAG_END = f"const c = e.currentTarget.classList; c.remove({DRAGGING}); c.add({I
 def input_file(on_change) -> FileSelection:
     """The drop zone: drop or browse files, or (in a native window) pick a folder.
     `on_change` runs whenever the selection changes."""
-    allowed_files = "".join(x for x in str(load_formats()) if x not in "[]'")
     uploader = ui.upload(multiple=True, auto_upload=True).classes("hidden")
-    uploader.props(f"accept='{allowed_files}' batch")
+    uploader.props(f"accept='{','.join(load_formats())}' batch")
     native = app.native.main_window is not None
     portal = (FLATPAK or LINUX) and native
     selection = FileSelection(uploader, native, portal)

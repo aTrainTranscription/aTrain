@@ -10,7 +10,7 @@ import pytest
 from aTrain.components.settings import file as file_component
 from aTrain.components.settings import model as model_component
 from aTrain.components.settings.speakers import CUSTOM_ERROR, speaker_settings
-from aTrain.utils import file_selection, queue_ui, transcription
+from aTrain.utils import file_selection, flatpak_portal, queue_ui, transcription
 from aTrain.utils.file_selection import FileSelection, check_dropped, ignored_files
 from aTrain.utils.linux_drop import EVENT
 from aTrain.utils.transcription import start_paths
@@ -457,6 +457,7 @@ async def test_back_keeps_the_job(service, tmp_path, user: User):
     await open_page(user)
     await user.should_see("x.mp3", retries=200)
     row_button(user, "x", "close").click()
+    await user.should_see("Remove x.mp3 from the queue?")
     user.find(kind=ui.button, content="Back").click()
     await user.should_not_see("Remove x.mp3 from the queue?")
     assert ids(service) == ["x"]
@@ -472,6 +473,19 @@ async def test_clear_finished_keeps_the_others(service, tmp_path, user: User):
     user.find(kind=ui.button, content="Clear finished").click()
     await user.should_see("Remove 2 finished, failed or cancelled jobs from the queue?")
     await user.should_see("This also deletes the uploaded files of 1 failed or cancelled job.")
+    user.find(marker="confirm_ok").click()
+
+    await until(lambda: ids(service) == ["a"])
+
+
+async def test_clear_finished_keeps_jobs_that_finished_while_asking(service, tmp_path, user: User):
+    add(service, tmp_path, "a")
+    add(service, tmp_path, "b", S.CANCELLED)
+    await open_page(user)
+    user.find(kind=ui.button, content="Clear finished").click()
+    await user.should_see("Remove 1 finished, failed or cancelled job from the queue?")
+
+    service.store.update("a", status=S.FAILED)  # finishes while the question is open
     user.find(marker="confirm_ok").click()
 
     await until(lambda: ids(service) == ["a"])
@@ -562,7 +576,7 @@ async def test_an_unreadable_drop_in_a_flatpak_opens_the_chooser_there(
         return [str(granted)]
 
     monkeypatch.setattr(file_selection, "FLATPAK", True)
-    monkeypatch.setattr(file_selection, "pick_native", pick_native)
+    monkeypatch.setattr(flatpak_portal, "pick_native", pick_native)
     await open_page(user)
 
     drop(user, [Path("/home/me/Downloads/a.mp3")])  # a drag without the portal
