@@ -26,6 +26,13 @@ data/
 .vscode
 .nicegui/
 
+# Generated Flatpak manifests, sources and build outputs.
+/.flatpak-work/
+/.flatpak-builder/
+/flatpak-release/
+/flatpak_app/
+/repo/
+/*.flatpak
 # Local state of AI coding agents (shared instructions live in AGENTS.md)
 .claude/settings.local.json
 .codex/
