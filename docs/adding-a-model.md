@@ -115,6 +115,10 @@ licence dialog on the Models page is wired to `crisperwhisper-v2-large` in
   without pinned hashes.
 - In the app, the model appears on the Models page in its group, downloads,
   and transcribes a recording in its target language.
+- `uv run scripts/evaluate_wer.py <audio> <reference> --models <key> <other key>`
+  compares its word error rate with an existing model on a recording you have
+  a reference transcript for. Its `--help` also shows how to evaluate a model
+  before it is uploaded.
 - The pull request's CI builds the SBOM with the new entry.
 
 ## Required models
