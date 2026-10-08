@@ -89,7 +89,7 @@ class FasterWhisperTranscriber:
             elif segment.text.strip():
                 log(f"Segment without word timestamps kept as one word: {segment.start:.1f}s")
                 words.append({"word": segment.text, "start": segment.start, "end": segment.end})
-        return {"segments": words_to_segments(words)}
+        return {"segments": words_to_segments(words), "language": info.language}
 
     def close(self) -> None:
         self._model = None
