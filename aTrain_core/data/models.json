@@ -9,7 +9,7 @@
         "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 78206636,
-        "repo_size_human": "75.54 MB",
+        "repo_size_human": "78.21 MB",
         "files": {
             ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
             "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
@@ -30,7 +30,7 @@
         "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 147885958,
-        "repo_size_human": "145.22 MB",
+        "repo_size_human": "147.89 MB",
         "files": {
             ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
             "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
@@ -51,7 +51,7 @@
         "backend": "faster-whisper",
         "type": "regular",
         "repo_size": 486215389,
-        "repo_size_human": "483.55 MB",
+        "repo_size_human": "486.22 MB",
         "files": {
             ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
             "README.md": "sha256:3e0e15fa0c5cc81675bd69af8eb469d128a725c1a7bfc71f03b7877b7b650567",
@@ -176,7 +176,7 @@
         "license": "CC-BY-4.0",
         "backend": "pyannote",
         "repo_size": 33695573,
-        "repo_size_human": "32.1 MB",
+        "repo_size_human": "33.70 MB",
         "files": {
             ".gitattributes": "sha256:5ca5d721264b62c84e55b912e7cdb019439cad30d41df8aeea3a23f9b1f86ef3",
             "README.md": "sha256:2db91f9265bd81f1653ff088b5bff22bf6aebebea03328513af65501643f8a31",
@@ -203,7 +203,7 @@
             "en"
         ],
         "repo_size": 1516112610,
-        "repo_size_human": "1.51 GB",
+        "repo_size_human": "1.52 GB",
         "files": {
             ".gitattributes": "sha256:5200b9d86f3259876395b34b74017c850f7ad6f057ae70b59855a2243af5f147",
             "README.md": "sha256:a3ca2b87586e693a4e7a96993a192b583e93ec62f752bd35c0b57c55fde23143",
@@ -228,8 +228,8 @@
             "nn",
             "en"
         ],
-        "repo_size": 6178178615,
-        "repo_size_human": "5.75 GB",
+        "repo_size": 6178177760,
+        "repo_size_human": "6.18 GB",
         "files": {
             ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
             "README.md": "sha256:4bcf87ecfbbb8e07a01b21415a970c8b53a5283bf6872b657040d3f45c9241f7",
@@ -262,7 +262,7 @@
             "ru",
             "sv"
         ],
-        "repo_size": 3086843114,
+        "repo_size": 3092523592,
         "repo_size_human": "3.09 GB",
         "files": {
             ".gitattributes": "sha256:11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",

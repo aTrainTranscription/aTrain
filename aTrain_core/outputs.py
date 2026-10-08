@@ -23,13 +23,6 @@ from aTrain_core.globals import (
 from aTrain_core.settings import Settings
 
 
-def create_directory(file_id):
-    """Creates a directory for storing transcription files."""
-    os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
-    file_directory = os.path.join(TRANSCRIPT_DIR, file_id)
-    os.makedirs(file_directory, exist_ok=True)
-
-
 def create_file_id(file_path, timestamp):
     """Creates a unique identifier for a file composed of the file path and timestamp."""
     # Extract filename from file_path

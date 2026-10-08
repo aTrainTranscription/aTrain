@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, MutableMapping
-from functools import partial, wraps
+from functools import wraps
 from pathlib import Path
 
 from aTrain_core.backends.common import crisper_compute_type, words_to_segments
 from aTrain_core.globals import SAMPLING_RATE
-from aTrain_core.outputs import write_logfile
-from aTrain_core.settings import ComputeType, Device, Settings
+from aTrain_core.settings import ComputeType, Device
 
 
 def _suppress_encoder_attentions(model) -> None:
@@ -96,19 +95,3 @@ def transcribe_with_model(
         raise RuntimeError("CrisperWhisper returned no word timestamps.")
     progress["current"] = 1
     return {"segments": words_to_segments(words)}
-
-
-def transcribe(settings: Settings, model_path: Path, audio) -> dict:
-    """Load CrisperWhisper and transcribe one recording with it."""
-    if settings.language == "auto-detect":
-        raise ValueError("CrisperWhisper requires a language; select one instead of auto-detect.")
-    model = load_model(model_path, settings.device, settings.compute_type, settings.cpu_threads)
-    return transcribe_with_model(
-        model,
-        audio,
-        language=settings.language,
-        initial_prompt=settings.initial_prompt,
-        temperature=settings.temperature,
-        progress=settings.progress,
-        log=partial(write_logfile, file_id=settings.file_id),
-    )

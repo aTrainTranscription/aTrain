@@ -105,6 +105,8 @@ Get-AppxPackage -AllUsers -Name 26987BusinessAnalyticsand.aTrain | Remove-AppxPa
 ```
 
 User data under `Documents\aTrain`, including existing transcripts, is kept.
+[Uninstalling aTrain](uninstall.md) lists everything an uninstall leaves
+behind and how to remove it.
 
 Updating within the same identity needs no uninstall: a package with a higher
 version installs over the existing one. Equal or lower versions are rejected

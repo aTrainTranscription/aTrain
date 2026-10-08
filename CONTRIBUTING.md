@@ -2,7 +2,8 @@
 
 aTrain uses [uv](https://docs.astral.sh/uv/) for environment and dependency
 management. uv is the recommended workflow for local development and is what
-CI uses.
+CI uses. If you work with an AI coding agent, [AGENTS.md](AGENTS.md) holds
+the repo-specific notes it should read first.
 
 ```bash
 uv sync                 # install runtime dependencies
@@ -127,6 +128,8 @@ After each release, a new branch `bugfixes_for_aTrain_1.x.x` will be opened. Any
 Developers create new branches on their own forks/repositories which are either named `feature_xx` for feature branches or `bugfixes_xx` for bugfix branches. Once they finished development, they can submit a pull request in order to merge their branch into `develop`. Before the pull requests, the branch should be rebased to the current state of develop such that the submitted changes are direct descendants from the current state of develop, and no merge conflicts exist.
 
 If you want to contribute to a collaborative feature branch, the same steps apply as for contributing a full feature/bugfix to `develop`, only that the base will be that feature branch rather than `develop`.
+
+To propose or add a transcription model, see [Adding a model](docs/adding-a-model.md).
 
 aTrain maintainers may:
 
