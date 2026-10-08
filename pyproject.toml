@@ -26,15 +26,16 @@ dependencies = [
   # CrisperWhisper v2 uses this Transformers-only path. Do not add its
   # CTranslate2 extra (a incompatible fork of Ctranslate2 used by faster-whisper):
   "crisperwhisper[transformers]==2.0.3",
-  "transformers==4.57.3",
+  # 5.17 is the first release with Parakeet TDT, Qwen3-ASR and Canary support.
+  "transformers==5.17.0",
   "pandas==3.0.6",
   "pyannote.audio==4.0.7",
   "numpy==2.4.6",
+  # Transformers 5.17 requires Hub >=1.5,<2; download and inference paths
+  # are covered by the core integration tests before changing this pin.
+  "huggingface-hub==1.33.0",
   "werkzeug==3.1.9",
-  # transformers 4.57 requires >=0.34; keep this below 1 until all callers
-  # have been evaluated against the Hub 1.x API.
-  "huggingface-hub==0.36.0",
-  "torch==2.9.1+cu128; sys_platform == 'win32'",
+   "torch==2.9.1+cu128; sys_platform == 'win32'",
   "torch==2.9.1; sys_platform != 'win32'",
   # torchaudio must match torch (ABI-coupled); keep in lockstep with the pins above.
   "torchaudio==2.9.1+cu128; sys_platform == 'win32'",

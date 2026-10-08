@@ -72,6 +72,19 @@ uv run pip-audit /tmp/audit --locked
 `uv.lock` is in sync with `pyproject.toml`. Running `uv lock` locally
 after any dependency change keeps the lockfile current.
 
+### Transformers and Hugging Face Hub upgrades
+
+Before bumping either, run `tests/unit` and `tests/core`, plus real
+CrisperWhisper inference. That test downloads about 3 GB into a temporary
+directory, so it is opt-in locally and runs in the separate `e2e-crisper` CI job:
+
+```bash
+ATRAIN_TEST_CRISPER=1 uv run --no-sync pytest tests/core/test_crisper_transformers_e2e.py -v
+# Or reuse a local copy of the pinned CrisperWhisper v2 large model:
+ATRAIN_CRISPER_MODEL_PATH=/path/to/crisperwhisper-v2-large \
+  uv run --no-sync pytest tests/core/test_crisper_transformers_e2e.py -v
+```
+
 # Building a standalone executable
 
 We use [PyInstaller](https://pyinstaller.org/) to freeze aTrain into a
