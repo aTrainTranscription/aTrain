@@ -39,7 +39,7 @@ def model_path(tmp_path_factory):
 def transcribe(model_path, monkeypatch, clip, seconds):
     import torch
     from aTrain_core.backends import crisper_transformers
-    from aTrain_core.settings import ComputeType, Device, Settings
+    from aTrain_core.settings import ComputeType, Device
     from faster_whisper.audio import decode_audio
 
     # Observe the real encoder output: this catches an ineffective patch even
@@ -57,23 +57,18 @@ def transcribe(model_path, monkeypatch, clip, seconds):
 
     monkeypatch.setattr(crisper_transformers, "_suppress_encoder_attentions", instrument)
     audio = decode_audio(str(FIXTURES / clip))[: int(seconds * 16000)]
-    settings = Settings(
-        file=FIXTURES / clip,
-        file_id="crisper_test",
-        file_name=clip,
-        model="crisperwhisper-v2-large",
-        language="en",
-        speaker_detection=False,
-        speaker_count=None,
-        device=Device.CPU,
-        compute_type=ComputeType.FLOAT32,
-        timestamp="",
-        temperature=None,
-        cpu_threads=4,
-    )
     previous_threads = torch.get_num_threads()
     try:
-        segments = crisper_transformers.transcribe(settings, model_path, audio)["segments"]
+        model = crisper_transformers.load_model(model_path, Device.CPU, ComputeType.FLOAT32, 4)
+        segments = crisper_transformers.transcribe_with_model(
+            model,
+            audio,
+            language="en",
+            initial_prompt=None,
+            temperature=None,
+            progress={},
+            log=print,
+        )["segments"]
     finally:
         torch.set_num_threads(previous_threads)
         gc.collect()
