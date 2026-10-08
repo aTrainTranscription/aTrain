@@ -38,9 +38,7 @@ dependencies = [
   # are covered by the core integration tests before changing this pin.
   "huggingface-hub==1.33.0",
   "werkzeug==3.1.9",
-  # transformers 4.57 requires >=0.34; keep this below 1 until all callers
-  # have been evaluated against the Hub 1.x API.
-  "torch==2.9.1+cu128; sys_platform == 'win32'",
+   "torch==2.9.1+cu128; sys_platform == 'win32'",
   "torch==2.9.1; sys_platform != 'win32'",
   # torchaudio must match torch (ABI-coupled); keep in lockstep with the pins above.
   "torchaudio==2.9.1+cu128; sys_platform == 'win32'",

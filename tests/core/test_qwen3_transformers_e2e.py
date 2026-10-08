@@ -82,25 +82,15 @@ def transcribe(model_dir, clip, seconds, *, language="en", prompt=None):
 
 
 def test_short_clip_is_transcribed_and_aligned(model_dir):
-    segments = transcribe(model_dir, "sample_short.mp3", 3.2)
+    segments = transcribe(
+        model_dir, "sample_short.mp3", 3.2, language="auto-detect", prompt="LibriVox"
+    )
     text = "".join(segment["words"][0]["word"] for segment in segments)
     assert text.lower() == "this is a librivox recording."
     # Compare against the established Crisper/Whisper boundary baseline. The
     # separate aligner has an 80 ms grid and different boundary conventions.
     assert [s["start"] for s in segments] == pytest.approx([1.04, 1.50, 1.66, 1.80, 2.26], abs=0.30)
     assert [s["end"] for s in segments] == pytest.approx([1.50, 1.66, 1.80, 2.26, 3.20], abs=0.30)
-
-
-def test_language_detection_and_context_prompt(model_dir):
-    segments = transcribe(
-        model_dir,
-        "sample_short.mp3",
-        3.2,
-        language="auto-detect",
-        prompt="LibriVox",
-    )
-    text = "".join(segment["words"][0]["word"] for segment in segments)
-    assert text.lower() == "this is a librivox recording."
 
 
 def test_long_form_preserves_text_and_original_word_times(model_dir):
