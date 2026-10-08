@@ -13,6 +13,7 @@ from typing import cast
 import aTrain_core.transcribe  # noqa: F401  pre-import so the splash import is instant
 from aTrain.utils import queue_ui
 from aTrain.utils.transcription import stage_upload, start_paths
+from aTrain_core.load_resources import get_model
 from nicegui import app, events, ui
 from nicegui.testing import User
 
@@ -39,6 +40,7 @@ CHEAP_SETTINGS = {
 
 async def test_transcribe_through_ui(user: User):
     """Stage a browser upload and run it through the real queue to the rendered result."""
+    get_model("tiny")  # a fresh machine (CI) has no model, and the job would be refused
     await user.open("/")
     # The UI settings components write into app.storage.general; set them
     # directly to force the cheap path (tiny model, CPU) over the UI default.
@@ -60,7 +62,7 @@ async def test_transcribe_through_ui(user: User):
         ],
     )
     with user:
-        await start_paths([await stage_upload(file) for file in upload_event.files])
+        assert await start_paths([await stage_upload(file) for file in upload_event.files])
     await user.open("/")
     await user.should_see("Done", retries=600)
 
