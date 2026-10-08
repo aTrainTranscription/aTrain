@@ -1,53 +1,55 @@
-from pathlib import Path
-
-from aTrain.components.settings.advanced import advanced_settings
+from aTrain.components.queue_status import queue_status
+from aTrain.components.settings.advanced import seed_defaults
 from aTrain.components.settings.file import input_file
 from aTrain.components.settings.language import input_language
 from aTrain.components.settings.model import input_model
-from aTrain.components.settings.speaker_count import input_speaker_count
-from aTrain.components.settings.speaker_detection import input_speaker_detection
+from aTrain.components.settings.speakers import input_speakers
 from aTrain.components.splash_screen import splash_screen
 from aTrain.layouts.base import base_layout
-from aTrain.utils.transcription import start_transcription, start_transcription_from_path
-from aTrain_core.globals import FLATPAK, LINUX
-from nicegui import Client, app, ui
+from nicegui import Client, ui
 
 
 @ui.page("/")
 async def page(client: Client):
     await client.connected()
     await splash_screen()
+    if client.is_deleted:
+        return  # the window loaded the page again while the splash screen was waiting
+    # Imported here: it loads the engine modules (the splash screen has loaded torch by now).
+    from aTrain.utils import queue_ui
+    from aTrain_core.jobs import QueueLockedError
+
+    try:
+        service = await queue_ui.get_queue_service()
+    except QueueLockedError:
+        service = None
+    locked = service is None
+    seed_defaults()
     with base_layout():
+        if locked:
+            ui.label(queue_ui.LOCKED_TEXT).classes("w-full p-3 bg-amber-100 text-dark rounded")
+
+        def update_add():
+            count = len(files.names)
+            if service is None or service.jobs():
+                add.text = f"Add {count} files to queue" if count > 1 else "Add to queue"
+            else:  # nothing in the queue yet
+                add.text = f"Transcribe {count} files" if count > 1 else "Transcribe"
+            add.set_enabled(bool(count) and not files.uploading and not locked)
+
+        async def add_to_queue():
+            await files.submit()
+            open_list()
+
         with ui.element("div").classes(
-            "w-full h-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
+            "w-full grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_300px] gap-8"
         ):
-            file = input_file()
-            input_model()
-            input_language()
-            input_speaker_detection()
-            input_speaker_count()
-        ui.separator().classes("mt-4")
-        with ui.row().classes("w-full justify-between items-center"):
-            settings_btn = ui.button("Advanced Settings", color="gray-100").mark(
-                "open_advanced_settings"
-            )
-            settings_btn.props("size=0.8rem unelevated no-caps icon=settings")
-            if (FLATPAK or LINUX) and app.native.main_window is not None:
-
-                async def start_from_selected():
-                    if not getattr(file, "selected_path", None):
-                        ui.notify("Please select a file first", color="negative")
-                        return
-                    await start_transcription_from_path(
-                        Path(file.selected_path), file.selected_name
-                    )
-
-                start_btn = ui.button("Start", on_click=start_from_selected, color="dark")
-            else:
-                start_btn = ui.button("Start", on_click=file.upload, color="dark")
-            start_btn.props("no-caps unelevated")
-            advanced_settings(open=False)
-
-    if not (FLATPAK or LINUX) or app.native.main_window is None:
-        file.on_upload(start_transcription)
-    settings_btn.on_click(lambda: advanced_settings(open=True))
+            files = input_file(on_change=lambda: update_add())
+            with ui.column().classes("w-full gap-3.5"):
+                input_model()
+                input_language()
+                input_speakers()
+                add = ui.button("Add to queue", on_click=add_to_queue, color="dark")
+                add.props("no-caps unelevated").classes("w-full h-11 mt-1").mark("add_to_queue")
+        update_add()
+        open_list = queue_status(service) if not locked else lambda: None

@@ -76,7 +76,7 @@ def test_read_directories_creates_dir_when_missing(archive_root):
 
 def test_read_directories_sorted_reverse_dirs_only(archive_root):
     archive_root.mkdir()
-    for name in ("a", "b", "c"):
+    for name in ("a", "b", "c", ".pending"):  # .pending: outputs not yet published
         (archive_root / name).mkdir()
     (archive_root / "loose_file.txt").write_text("x")
     assert archive.read_directories() == ["c", "b", "a"]

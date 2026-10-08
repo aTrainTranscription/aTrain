@@ -1,11 +1,10 @@
-"""Backend-neutral transcription steps: load a model once, then transcribe or diarize
-several recordings with it.
+"""Backend-neutral transcription steps: load a model, then transcribe or diarize a
+recording with it.
 
 torch, faster_whisper, pyannote and crisperwhisper are imported inside functions, so this
 module stays cheap to import (for example in a freshly spawned child process).
 """
 
-import gc
 import sys
 import warnings
 from collections.abc import Callable, MutableMapping
@@ -51,8 +50,6 @@ class Transcriber(Protocol):
         log: Log,
     ) -> dict: ...  # {"segments": [...]}, one segment per word
 
-    def close(self) -> None: ...
-
 
 class FasterWhisperTranscriber:
     backend = "faster-whisper"
@@ -91,9 +88,6 @@ class FasterWhisperTranscriber:
                 words.append({"word": segment.text, "start": segment.start, "end": segment.end})
         return {"segments": words_to_segments(words)}
 
-    def close(self) -> None:
-        self._model = None
-
 
 class CrisperTranscriber:
     backend = "crisper-transformers"
@@ -117,9 +111,6 @@ class CrisperTranscriber:
             progress=progress,
             log=log,
         )
-
-    def close(self) -> None:
-        self._model = None
 
 
 TRANSCRIBERS: dict[str, type[FasterWhisperTranscriber | CrisperTranscriber]] = {
@@ -156,11 +147,12 @@ def transcription_with_progress_bar(segments, info, progress: MutableMapping):
     with tqdm(
         total=total_duration, unit=" audio seconds", desc="Transcribing with Whisper"
     ) as pbar:
+        # total first: a progress sender may send at once, with whatever total it has
+        progress["total"] = total_duration
         progress["task"] = "Transcribe"
         for segment in segments:
             segments_new.append(segment)
             progress["current"] = segment.end
-            progress["total"] = total_duration
             pbar.update(segment.end - timestamps)
             timestamps = segment.end
         if timestamps < info.duration:  # silence at the end of the audio
@@ -246,13 +238,3 @@ def _progress_hook(progress: MutableMapping):
                 self._progress["current"] = (completed / total + 1) * self.grand_total / 2
 
     return CustomProgressHook(progress)
-
-
-def release_memory(device: Device) -> None:
-    """Free memory of models that are no longer referenced."""
-    gc.collect()
-    if device == Device.GPU:
-        import torch
-
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
