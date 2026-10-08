@@ -83,6 +83,34 @@ def test_faster_whisper_transcriber_keeps_segments_without_word_timestamps():
     assert "Segment without word timestamps kept as one word: 1.5s" in log
 
 
+def test_qwen3_transcriber_passes_job_settings(monkeypatch):
+    from aTrain_core.backends import qwen3_transformers
+
+    calls = []
+    monkeypatch.setattr(
+        qwen3_transformers, "transcribe", lambda *args: calls.append(args) or {"segments": []}
+    )
+    progress = {}
+
+    transcriber = engine.load_transcriber(key("qwen3-asr-0.6b"), Path("/models/x"))
+    transcript = transcriber.transcribe(
+        "audio",
+        language="de",
+        initial_prompt="x",
+        temperature=0.2,
+        progress=progress,
+        log=lambda message: None,
+    )
+
+    assert transcript == {"segments": []}
+    ((settings, model_path, audio),) = calls
+    assert (model_path, audio) == (Path("/models/x"), "audio")
+    assert (settings.model, settings.cpu_threads) == ("qwen3-asr-0.6b", 4)
+    assert (settings.device, settings.compute_type) == (Device.CPU, ComputeType.INT8)
+    assert (settings.language, settings.initial_prompt, settings.temperature) == ("de", "x", 0.2)
+    assert settings.progress is progress
+
+
 def test_crisper_transcribe_with_model_logs_ignored_settings():
     result = SimpleNamespace(words=[word("Hi", 0.0, 0.3)], text="Hi")
     model = SimpleNamespace(transcribe=lambda *args, **kwargs: result)

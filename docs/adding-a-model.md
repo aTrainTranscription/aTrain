@@ -4,8 +4,10 @@ aTrain only offers the models listed in
 [`aTrain_core/data/models.json`](../aTrain_core/data/models.json). It downloads
 them from mirrors under the [aTrain-core](https://huggingface.co/aTrain-core)
 organisation on Hugging Face, pinned to a commit, and checks every file against
-a pinned hash. Model files can run code when they are loaded, so aTrain only
-downloads from this controlled source. Adding your own model inside the app is
+a pinned hash. Qwen3 ASR and its aligner currently use the official
+[Qwen](https://huggingface.co/Qwen) `-hf` repositories as an explicit exception
+until mirrors are available. These checkpoints use safetensors and native
+Transformers classes; no remote model code is enabled. Adding your own model inside the app is
 not supported yet, see
 [#72](https://github.com/aTrainTranscription/aTrain/issues/72).
 
@@ -19,8 +21,8 @@ Two roles are involved:
 ## 1. Check the model
 
 - The licence allows us to host a copy, and you know its SPDX identifier.
-- The model has a Whisper architecture, either already converted for
-  faster-whisper (CTranslate2) or in Hugging Face transformers format.
+- The model has an architecture supported by aTrain's faster-whisper or
+  Transformers backends.
 - The transcription quality of real recordings in its target language is good.
 - If the model needs a backend aTrain does not have yet, open a pull request
   first that weighs the cost of the new backend against what the model offers
@@ -52,6 +54,7 @@ Every file in the repo gets pinned and downloaded, so keep only these:
 | ---------------------- | ------------------------------------------------------------------------------------------- |
 | `faster-whisper`       | `config.json`, `model.bin`, `preprocessor_config.json`, `tokenizer.json`, `vocabulary.json` |
 | `crisper-transformers` | the transformers files of the source model, see `aTrain-core/CrisperWhisper2_large`         |
+| `qwen3-transformers`, `qwen3-aligner` | the native `-hf` checkpoint's safetensors, config, processor, tokenizer and chat-template files |
 | all                    | `.gitattributes` (created by the Hub), `README.md`, the licence file                        |
 
 ## 3. Add the entry
@@ -75,15 +78,16 @@ models directory. An entry for a faster-whisper model:
 
 | Field                                   | Required              | Used for                                                                                     |
 | --------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
-| `repo_id`                               | yes                   | download source, always under `aTrain-core/`                                                 |
+| `repo_id`                               | yes                   | download source under `aTrain-core/`; official `Qwen/` repositories for the Qwen3 exception |
 | `revision`                              | yes                   | the commit to download; a commit hash, never a branch                                        |
 | `license`                               | yes                   | the SBOM; see step 5                                                                         |
-| `backend`                               | yes                   | `faster-whisper`, `crisper-transformers` or `pyannote`                                       |
+| `backend`                               | yes                   | `faster-whisper`, `crisper-transformers`, `qwen3-transformers`, `qwen3-aligner` or `pyannote` |
 | `type`                                  | faster-whisper models | `regular`, or `distil` for distilled models (changes decoding settings)                      |
 | `languages`                             | no                    | language codes from `aTrain_core/data/languages.json`; without it, all languages are offered |
 | `group`                                 | no                    | section on the Models page: `Recommended`, `Language Specific` or `All others` (default)     |
 | `display_name`                          | no                    | name on the Models page, defaults to the key                                                 |
 | `info`                                  | no                    | tooltip on the Models page                                                                   |
+| `dependencies`                          | no                    | model keys downloaded and verified before this one, such as a shared aligner |
 | `files`, `repo_size`, `repo_size_human` | yes                   | written by the script in step 4                                                              |
 
 ## 4. Pin hashes and sizes
@@ -116,6 +120,16 @@ licence dialog on the Models page is wired to `crisperwhisper-v2-large` in
 - In the app, the model appears on the Models page in its group, downloads,
   and transcribes a recording in its target language.
 - The pull request's CI builds the SBOM with the new entry.
+
+## Qwen3 ASR
+
+`qwen3-asr-0.6b` and `qwen3-asr-1.7b` run on native Transformers and share
+`qwen3-forced-aligner-0.6b` for word timestamps. `get_model` downloads the
+aligner as a dependency; its `type: "alignment"` keeps it out of the
+transcription selector. Only the languages the aligner supports are offered.
+
+Run the real CPU checks with
+`ATRAIN_TEST_QWEN=1 uv run --no-sync pytest tests/core/test_qwen3_transformers_e2e.py -v`.
 
 ## Required models
 

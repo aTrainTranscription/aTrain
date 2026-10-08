@@ -69,8 +69,9 @@ def page():
                                                 ui.navigate.reload(),
                                             )
                                         )
-                                    else:
+                                    if not model["downloaded"] or model.get("dependencies_missing"):
                                         btn_download = ui.button("Download", color="dark")
+                                        btn_download.mark(f"download_model_{model['model']}")
                                         btn_download.props("no-caps size=0.7rem unelevated")
                                         if model["model"] == "crisperwhisper-v2-large":
                                             btn_download.on_click(

@@ -35,6 +35,9 @@ from aTrain_core.outputs import (
 )
 from aTrain_core.settings import Device, ModelKey, Settings
 
+# Backends that run through Transformers, always in a separate process.
+TRANSFORMERS_BACKENDS = ("crisper-transformers", "qwen3-transformers")
+
 
 def prepare_transcription(file: Path) -> tuple[Path, str, str]:
     """Create timestamp, file_id and directory for transcription"""
@@ -55,7 +58,7 @@ def transcribe(settings: Settings):
     create_metadata(settings, audio_duration)
     model_path = get_model(settings.model)
     write_logfile("Model loaded", settings.file_id)
-    if settings.device == Device.GPU or backend == "crisper-transformers":
+    if settings.device == Device.GPU or backend in TRANSFORMERS_BACKENDS:
         write_logfile("Transcribing in seperate process", settings.file_id)
         transcript = run_transcription_in_process(settings, model_path, audio_array)
     elif settings.device == Device.CPU:
@@ -92,14 +95,14 @@ def run_transcription(
             log=partial(write_logfile, file_id=settings.file_id),
         )
         write_logfile("Transcription successful", settings.file_id)
-        if settings.device == Device.GPU or backend == "crisper-transformers":
+        if settings.device == Device.GPU or backend in TRANSFORMERS_BACKENDS:
             returnDict["transcript"] = transcript
         if settings.device == Device.CPU:
             return transcript
         os._exit(0)
 
     except Exception as error:
-        if settings.device == Device.CPU and backend != "crisper-transformers":
+        if settings.device == Device.CPU and backend not in TRANSFORMERS_BACKENDS:
             raise error
         returnDict["error"] = error
 

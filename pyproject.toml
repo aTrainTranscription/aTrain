@@ -28,6 +28,9 @@ dependencies = [
   "crisperwhisper[transformers]==2.0.3",
   # 5.17 is the first release with Parakeet TDT, Qwen3-ASR and Canary support.
   "transformers==5.17.0",
+  # Native Qwen3 forced alignment uses these tokenizers for Japanese/Korean.
+  "nagisa==0.3.0",
+  "soynlp==0.0.493",
   "pandas==3.0.6",
   "pyannote.audio==4.0.7",
   "numpy==2.4.6",

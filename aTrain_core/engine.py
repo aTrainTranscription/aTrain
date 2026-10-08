@@ -9,7 +9,9 @@ import gc
 import sys
 import warnings
 from collections.abc import Callable, MutableMapping
+from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 from typing import BinaryIO, Protocol
 
 import numpy as np
@@ -122,9 +124,35 @@ class CrisperTranscriber:
         self._model = None
 
 
-TRANSCRIBERS: dict[str, type[FasterWhisperTranscriber | CrisperTranscriber]] = {
+class Qwen3Transcriber:
+    backend = "qwen3-transformers"
+
+    def __init__(self, key: ModelKey, model_path: Path):
+        self._key = key
+        self._model_path = model_path
+
+    def transcribe(self, audio, *, language, initial_prompt, temperature, progress, log) -> dict:
+        from aTrain_core.backends import qwen3_transformers
+
+        log("Transcribing with Qwen3 ASR and word alignment.")
+        # qwen3_transformers.transcribe still loads its models per call and reads a Settings.
+        settings = SimpleNamespace(
+            **asdict(self._key),
+            language=language,
+            initial_prompt=initial_prompt,
+            temperature=temperature,
+            progress=progress,
+        )
+        return qwen3_transformers.transcribe(settings, self._model_path, audio)
+
+    def close(self) -> None:
+        pass
+
+
+TRANSCRIBERS: dict[str, type[FasterWhisperTranscriber | CrisperTranscriber | Qwen3Transcriber]] = {
     FasterWhisperTranscriber.backend: FasterWhisperTranscriber,
     CrisperTranscriber.backend: CrisperTranscriber,
+    Qwen3Transcriber.backend: Qwen3Transcriber,
 }
 
 
