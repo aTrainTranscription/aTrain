@@ -7,26 +7,28 @@ Transcript:
 
 """
 
+import importlib.util
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-import jiwer
 import pytest
 
-WER_TRANSFORM = jiwer.Compose(
-    [
-        jiwer.ToLowerCase(),
-        jiwer.ExpandCommonEnglishContractions(),
-        jiwer.SubstituteRegexes({r"-": " "}),  # "medium-term" → "medium term"
-        jiwer.RemovePunctuation(),
-        jiwer.SubstituteRegexes({r"\s+": " "}),  # collapse newlines/tabs too, not just spaces
-        jiwer.Strip(),
-        jiwer.ReduceToListOfListOfWords(),
-    ]
-)
+SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "evaluate_wer.py"
+
+
+def load_script():
+    """Import the script by path - scripts/ is not a package."""
+    spec = importlib.util.spec_from_file_location("evaluate_wer", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# Scores like scripts/evaluate_wer.py, so local evaluations match this test.
+evaluate_wer = load_script()
 
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 WER_AUDIO = FIXTURES_DIR / "wer_lagarde.mp3"
@@ -88,16 +90,9 @@ def test_transcription_accuracy_wer(atrain_env):
     try:
         for attempt in range(1, 4):
             out = _transcribe(env, data_dir, f"accuracy_attempt_{attempt}", WER_AUDIO)
-            # Drop the "Transcription for <id>" header line; the rest is the transcript.
-            lines = (out / "transcription.txt").read_text().splitlines()
-            hypothesis = "\n".join(lines[2:])
+            hypothesis = evaluate_wer.transcript_text(out)
 
-            wer = jiwer.wer(
-                reference,
-                hypothesis,
-                reference_transform=WER_TRANSFORM,
-                hypothesis_transform=WER_TRANSFORM,
-            )
+            wer = evaluate_wer.score(reference, hypothesis)
             wers.append(wer)
             print(f"Attempt {attempt} WER: {wer:.6f} ({wer:.2%})")
 
