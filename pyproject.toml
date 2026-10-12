@@ -39,8 +39,8 @@ dependencies = [
   # torchaudio must match torch (ABI-coupled); keep in lockstep with the pins above.
   "torchaudio==2.9.1+cu128; sys_platform == 'win32'",
   "torchaudio==2.9.1; sys_platform != 'win32'",
-  "typer==0.27.2",
-  "platformdirs==4.12.2",
+  "typer==0.27.3",
+  "platformdirs==4.12.4",
   "jiwer==4.0.0",
 ]
 
@@ -50,7 +50,7 @@ dependencies = [
 # headless CLI (`aTrain_core transcribe …`, `aTrain init`) works on the
 # base install.
 gui = [
-  "nicegui==3.17.1",
+  "nicegui==3.18.0",
   "pywebview==6.2.1",
   "pywebview[GTK]; sys_platform == 'linux'",
   "show-in-file-manager==1.1.6",

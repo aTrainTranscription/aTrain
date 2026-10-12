@@ -2,13 +2,16 @@ import json
 import os
 import shutil
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
-from aTrain_core.backends.common import ends_sentence
+from aTrain_core.backends.common import SRT_MAX_DURATION, ends_sentence, group_word_segments
 from aTrain_core.globals import (
     LOG_FILENAME,
     METADATA_FILENAME,
@@ -16,13 +19,6 @@ from aTrain_core.globals import (
     TRANSCRIPT_DIR,
 )
 from aTrain_core.settings import Settings
-
-
-def create_directory(file_id):
-    """Creates a directory for storing transcription files."""
-    os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
-    file_directory = os.path.join(TRANSCRIPT_DIR, file_id)
-    os.makedirs(file_directory, exist_ok=True)
 
 
 def create_file_id(file_path, timestamp):
@@ -38,6 +34,21 @@ def create_file_id(file_path, timestamp):
     short_base_name = file_base_name[0:7] if len(file_base_name) >= 5 else file_base_name
     file_id = timestamp + "-" + short_base_name
     return file_id
+
+
+def claim_file_id(file_path, timestamp) -> str:
+    """Create a new archive folder and return its file_id. Adds -2, -3, ... when the
+    folder exists, so two transcriptions never share one (also across processes)."""
+    base_file_id = create_file_id(file_path, timestamp)
+    os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
+    file_id, suffix = base_file_id, 1
+    while True:
+        try:
+            os.makedirs(os.path.join(TRANSCRIPT_DIR, file_id))
+            return file_id
+        except FileExistsError:
+            suffix += 1
+            file_id = f"{base_file_id}-{suffix}"
 
 
 def create_output_files(result, speaker_detection, file_id, subtitles=None):
@@ -152,10 +163,18 @@ def create_metadata(settings: Settings, audio_duration: int):
 def write_logfile(message, file_id):
     """Writes a log message to the log file."""
 
-    timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-    log_file_path = os.path.join(TRANSCRIPT_DIR, file_id, LOG_FILENAME)
-    with open(log_file_path, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}] ------ {message}\n")
+    make_logger(Path(TRANSCRIPT_DIR) / file_id / LOG_FILENAME)(message)
+
+
+def make_logger(log_file: Path) -> Callable[[str], None]:
+    """Return a function that appends timestamped messages to log_file."""
+
+    def log(message: str) -> None:
+        timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] ------ {message}\n")
+
+    return log
 
 
 def add_processing_time_to_metadata(file_id):
@@ -171,6 +190,103 @@ def add_processing_time_to_metadata(file_id):
     metadata["processing_time"] = int(processing_time.total_seconds())
     with open(metadata_file_path, "w", encoding="utf-8") as metadata_file:
         yaml.dump(metadata, metadata_file)
+
+
+def finalize(transcript: dict, backend: str) -> tuple[dict, dict]:
+    """Group the word segments into output cues, and into shorter cues for subtitles.
+    Runs after speaker detection, because a speaker change starts a new cue."""
+
+    join_raw = backend != "crisper-transformers"
+    segments = transcript["segments"]
+    cues = {"segments": group_word_segments(segments, join_raw)}
+    subtitles = {"segments": group_word_segments(segments, join_raw, max_duration=SRT_MAX_DURATION)}
+    return cues, subtitles
+
+
+def write_final_outputs(
+    settings: Settings,
+    transcript: dict,
+    *,
+    audio_duration: int,
+    backend: str,
+    work_log: Path | None = None,
+    export_dir: Path | None = None,
+) -> list[str]:
+    """Write metadata, log and all output files into the archive folder of settings.file_id,
+    then the optional copy to export_dir/<file_id>. Returns warnings: a failed copy is
+    never an error, the result is in the archive anyway."""
+
+    file_id = settings.file_id
+    directory = Path(TRANSCRIPT_DIR) / file_id
+    if work_log is not None:
+        shutil.copyfile(work_log, directory / LOG_FILENAME)
+    if not (directory / METADATA_FILENAME).exists():
+        create_metadata(settings, audio_duration)
+    cues, subtitles = finalize(transcript, backend)
+    create_output_files(cues, settings.speaker_detection, file_id, subtitles)
+    write_logfile("Created output files", file_id)
+    add_processing_time_to_metadata(file_id)
+    write_logfile("Processing time added to metadata", file_id)
+    if export_dir is None:
+        return []
+    target = Path(export_dir) / file_id
+    try:
+        shutil.copytree(directory, target, dirs_exist_ok=True)
+    except OSError as e:
+        warning = f"Copy to {target} failed: {e}"
+        write_logfile(warning, file_id)
+        return [warning]
+    return []
+
+
+@dataclass(frozen=True, slots=True)
+class Checkpoint:
+    transcript: dict
+    audio_duration: int
+
+
+def write_checkpoint(
+    path: Path,
+    *,
+    transcript: dict,
+    audio_duration: int,
+    source: Path,
+    source_stat: os.stat_result | None = None,
+) -> None:
+    """Save a word-level transcript atomically, tied to the size and modification time
+    of the source it was made from (`source_stat`, taken before decoding; default: now)."""
+
+    stat = source_stat or os.stat(source)
+    data = {
+        "source_size": stat.st_size,
+        "source_mtime_ns": stat.st_mtime_ns,
+        "audio_duration": audio_duration,
+        "transcript": transcript,
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
+def read_checkpoint(
+    path: Path, source: Path, source_stat: os.stat_result | None = None
+) -> Checkpoint | None:
+    """Return the saved transcript, or None if the file is missing or damaged, or the
+    source is gone or has changed since the checkpoint was written. Compares against
+    `source_stat` if given, else against the source now."""
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        stat = source_stat or os.stat(source)
+        if (data["source_size"], data["source_mtime_ns"]) != (stat.st_size, stat.st_mtime_ns):
+            return None
+        return Checkpoint(data["transcript"], data["audio_duration"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def delete_transcription(file_id):

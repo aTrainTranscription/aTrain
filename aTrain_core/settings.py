@@ -21,6 +21,16 @@ class ComputeType(StrEnum):
     FLOAT32 = auto()
 
 
+@dataclass(frozen=True, slots=True)
+class ModelKey:
+    """What decides which Whisper model is loaded. Jobs with the same key share one model."""
+
+    model: str
+    device: Device
+    compute_type: ComputeType
+    cpu_threads: int  # 0 for GPU, so GPU keys group together
+
+
 @dataclass
 class Settings:
     file: Path | BinaryIO
@@ -42,11 +52,19 @@ class Settings:
 def check_inputs_transcribe(file, model, language, device):
     """Check the validity of inputs for the transcription process."""
 
-    file_correct = check_file(file)
+    if not check_file(file):
+        raise ValueError("Incorrect input. Please check file, model and language.")
+    validate_job_settings(model, language, device)
+
+
+def validate_job_settings(model, language, device):
+    """Check the settings of a transcription before anything is loaded or created.
+    Also rejects auto-detect for models with a fixed language list, such as CrisperWhisper."""
+
     model_correct = check_model(model, language)
     language_correct = check_language(language)
-    device = check_device(device)
-    if not (file_correct and model_correct and language_correct):
+    check_device(device)
+    if not (model_correct and language_correct):
         raise ValueError("Incorrect input. Please check file, model and language.")
 
 

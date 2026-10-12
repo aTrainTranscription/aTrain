@@ -53,7 +53,7 @@ Run `uv lock` after any dependency change and commit `uv.lock`; CI installs with
 Known pitfalls in this repo. Add new ones as they come up.
 
 - Models and user data live under `ATRAIN_USER_DIR` (default `~/Documents/aTrain`; Flatpak keeps models in the XDG data dir instead). Tests must point it at a temp dir; the fixtures in `tests/core/test_transcription_e2e.py` show how. Never let a test download into the real folder.
-- Adding a model means a `models.json` entry with file hashes and a licence id, and `.github/scripts/build-sbom.py` must accept it. Non-standard licences need a `LicenseRef-...` expression.
+- Adding a model means a `models.json` entry with file hashes and a licence id, and `.github/scripts/build-sbom.py` must accept it. Follow [docs/adding-a-model.md](docs/adding-a-model.md).
 - Model download progress works by patching `huggingface_hub` internals in `aTrain_core/load_resources.py`. Check that path when touching downloads or bumping `huggingface_hub`.
 - Heavy imports (torch, ctranslate2) must stay out of the app's startup path, or the splash screen never shows.
 
@@ -62,4 +62,4 @@ Known pitfalls in this repo. Add new ones as they come up.
 - Branching, setup, release policy: [CONTRIBUTING.md](CONTRIBUTING.md)
 - MSIX and the release build: [packaging/msix/README.md](packaging/msix/README.md) and the header of `.github/workflows/release.yml`
 - Signing and verification: [docs/code-signing-policy.md](docs/code-signing-policy.md), [docs/verifying-releases.md](docs/verifying-releases.md)
-- Models and the SBOM: the docstring of `.github/scripts/build-sbom.py`
+- Adding a model: [docs/adding-a-model.md](docs/adding-a-model.md); models in the SBOM: the docstring of `.github/scripts/build-sbom.py`

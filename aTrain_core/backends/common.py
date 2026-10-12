@@ -3,12 +3,12 @@
 from collections.abc import Iterable
 from dataclasses import asdict, is_dataclass
 
-from aTrain_core.settings import ComputeType, Device, Settings
+from aTrain_core.settings import ComputeType, Device
 
 
-def crisper_compute_type(settings: Settings) -> str:
+def crisper_compute_type(device: Device, compute_type: ComputeType) -> str:
     """Return the precision supported by CrisperWhisper's Transformers path."""
-    if settings.device == Device.CPU or settings.compute_type == ComputeType.FLOAT32:
+    if device == Device.CPU or compute_type == ComputeType.FLOAT32:
         return "float32"
     return "float16"
 

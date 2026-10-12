@@ -1,7 +1,7 @@
 # This repository adheres to the publiccode.yml standard by including this
 # metadata file that makes public software easily discoverable.
 # More info at https://github.com/italia/publiccode.yml
-publiccodeYmlVersion: "0.4"
+publiccodeYmlVersion: "0.5"
 
 name: aTrain
 url: "https://github.com/aTrainTranscription/aTrain"
@@ -42,7 +42,7 @@ description:
       aTrain automatically transcribes speech recordings using
       state-of-the-art machine-learning models, without uploading any data.
       It was developed by researchers at the Center for Data Science in Business and Society
-       at the University of Graz and tested by researchers at
+      at the University of Graz and tested by researchers at
       the Know-Center Graz.
 
 
@@ -88,8 +88,8 @@ description:
     longDescription: >
       aTrain transkribiert Sprachaufnahmen automatisch mit modernen
       Machine-Learning-Modellen, ohne dass Daten hochgeladen werden.
-     Entwickelt wurde die Software von Forschenden am Center for Data Science in Business and Society
-       der Universität Graz und getestet von Forschenden am
+      Entwickelt wurde die Software von Forschenden am Center for Data Science in Business and Society
+      der Universität Graz und getestet von Forschenden am
       Know-Center Graz.
 
 
