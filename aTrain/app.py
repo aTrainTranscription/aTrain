@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import os
 import sys
 from pathlib import Path
@@ -6,6 +7,11 @@ from typing import Annotated, cast
 from aTrain_core.globals import ATRAIN_DIR, FLATPAK, REQUIRED_MODELS
 from aTrain_core.load_resources import get_model
 from typer import Option, Typer
+
+# forces linux to use spawn instead of fork, as CUDA doesn't work with fork
+# (spawn is default for Windows and Mac)
+# see: https://stackoverflow.com/questions/33748750/cuda-error-initialization-error-when-using-parallel-in-python
+mp.set_start_method("spawn", force=True)
 
 cli = Typer(help="CLI for aTrain.")
 
