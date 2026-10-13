@@ -37,7 +37,11 @@ def jobs(tmp_path, monkeypatch):
             speaker_detection=False,
             export_dir=None,
         )
-        result.append(runner.PhaseJob(spec, timestamp, tmp_path / "work" / job_id))
+        result.append(
+            runner.PhaseJob(
+                spec, timestamp, tmp_path / "atrain" / "transcriptions" / job_id / ".pending"
+            )
+        )
     return result
 
 

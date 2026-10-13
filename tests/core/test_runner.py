@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from aTrain_core import outputs, runner
 from aTrain_core.backends.common import words_to_segments
-from aTrain_core.jobs import Step
+from aTrain_core.jobs import JobStore, Step
 from tests.unit.test_jobs import make_spec
 
 TIMESTAMP = "2026-09-30 14-05-12"
@@ -68,7 +68,9 @@ def make_job(tmp_path, job_id, **overrides) -> runner.PhaseJob:
     spec = make_spec(
         id=job_id, source=source, display_name=f"{job_id}.mp3", export_dir=None, **overrides
     )
-    return runner.PhaseJob(spec, TIMESTAMP, tmp_path / "work" / job_id)
+    store = JobStore(tmp_path / "queue", tmp_path / "transcriptions")
+    store.add([spec])
+    return runner.PhaseJob(spec, TIMESTAMP, store.work_dir(job_id))
 
 
 def test_phase1_writes_outputs_for_jobs_without_speaker_detection(env):
@@ -161,7 +163,9 @@ def test_output_failure_keeps_checkpoints_and_only_publishes_on_retry(env, monke
     assert [(f.step, f.error) for f in failed.of(runner.JobFailed)] == [(Step.OUTPUT, "disk full")]
     assert (job.work_dir / runner.RAW_CHECKPOINT).is_file()
     assert (job.work_dir / runner.DIARIZED_CHECKPOINT).is_file()
-    assert list(archive.glob("[!.]*")) == []  # only the hidden .pending folder
+    assert list(archive.iterdir()) == [job.work_dir.parent]
+    assert (job.work_dir.parent / "transcription.txt").exists()
+    assert job.work_dir.exists()  # partial outputs stay hidden until JobDone
 
     channel = FakeChannel()
     runner.run_phase2(job, channel, lambda device: "pipeline")  # the retry replaces the rest

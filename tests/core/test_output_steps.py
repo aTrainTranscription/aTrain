@@ -62,8 +62,8 @@ def transcript(speakers: bool) -> dict:
 
 
 def test_claim_file_id_adds_suffix_in_the_same_minute(archive):
-    first = outputs.claim_file_id(Path("interview_01.mp3"), "2026-09-30 14-05-12")
-    second = outputs.claim_file_id(Path("interview_02.mp3"), "2026-09-30 14-05-40")
+    first = outputs.claim_file_id(Path("interview_01.mp3"), "2026-09-30 14-05-12", archive)
+    second = outputs.claim_file_id(Path("interview_02.mp3"), "2026-09-30 14-05-40", archive)
     assert first == "2609301405-intervi"
     assert second == "2609301405-intervi-2"
     assert (archive / first).is_dir() and (archive / second).is_dir()
@@ -71,7 +71,7 @@ def test_claim_file_id_adds_suffix_in_the_same_minute(archive):
 
 @pytest.mark.parametrize("speaker_detection", [True, False])
 def test_write_final_outputs_writes_all_files(archive, tmp_path, speaker_detection):
-    file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12")
+    file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12", archive)
     work_log = tmp_path / "work.log"
     work_log.write_text("[x] ------ Transcription successful\n", encoding="utf-8")
 
@@ -95,7 +95,9 @@ def test_write_final_outputs_writes_all_files(archive, tmp_path, speaker_detecti
 
 
 def test_write_final_outputs_export_copy(archive, tmp_path):
-    file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12")
+    file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12", archive)
+    (archive / file_id / ".pending").mkdir()
+    (archive / file_id / ".pending" / "work.log").write_text("temporary")
     export_dir = tmp_path / "Interviews" / "transcriptions"
     outputs.write_final_outputs(
         make_settings(file_id, False),
@@ -105,10 +107,11 @@ def test_write_final_outputs_export_copy(archive, tmp_path):
         export_dir=export_dir,
     )
     assert {p.name for p in (export_dir / file_id).iterdir()} >= OUTPUT_FILES
+    assert not (export_dir / file_id / ".pending").exists()
 
 
 def test_write_final_outputs_failed_copy_is_a_warning(archive, tmp_path):
-    file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12")
+    file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12", archive)
     not_a_folder = tmp_path / "file.txt"
     not_a_folder.write_text("x")
     warnings = outputs.write_final_outputs(

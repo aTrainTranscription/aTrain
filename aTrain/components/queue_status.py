@@ -134,13 +134,18 @@ def queue_status(service):
             await service.cancel(ids)
             update()
 
+    def has_upload(job_id: str) -> bool:
+        with suppress(KeyError):
+            return (service.store.work_dir(job_id) / "input").exists()
+        return False
+
     async def ask_remove(spec, status: JobStatus) -> None:
         name = spec.display_name
         if status == JobStatus.DONE:
             text = f"Remove {name}? The transcript stays in the archive."
         else:
             text = f"Remove {name} from the queue?"
-        if (service.store.uploads_root / spec.id).exists():
+        if has_upload(spec.id):
             text += "\nThe uploaded file will be deleted."
         if await confirm(text, "Remove"):
             with suppress(KeyError):  # the job was removed meanwhile
@@ -149,7 +154,7 @@ def queue_status(service):
 
     async def ask_clear_finished() -> None:
         finished = [spec for spec, state in service.jobs() if state.status in FINAL_STATUSES]
-        uploads = sum((service.store.uploads_root / spec.id).exists() for spec in finished)
+        uploads = sum(has_upload(spec.id) for spec in finished)
         text = (
             f"Remove {plural(len(finished), 'finished, failed or cancelled job')} from the queue?"
         )

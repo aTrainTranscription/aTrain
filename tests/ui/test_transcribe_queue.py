@@ -40,7 +40,9 @@ def no_child(arg):
 @pytest.fixture
 async def service(tmp_path, monkeypatch):
     service = QueueService(
-        JobStore(tmp_path / "queue"), launch_phase1=no_child, launch_phase2=no_child
+        JobStore(tmp_path / "queue", tmp_path / "transcriptions"),
+        launch_phase1=no_child,
+        launch_phase2=no_child,
     )
     service.pause()
     await service.start()
@@ -314,7 +316,7 @@ async def test_failed_job_shows_its_error(service, tmp_path, user: User):
 
 async def test_remove_asks_first(service, tmp_path, user: User):
     add(service, tmp_path, "x", S.FAILED)
-    (service.store.uploads_root / "x").mkdir(parents=True)
+    (service.store.work_dir("x") / "input").mkdir(parents=True)
     await open_page(user)
     await user.should_see("x.mp3", retries=200)
 
@@ -329,7 +331,7 @@ async def test_clear_finished_keeps_the_others(service, tmp_path, user: User):
     add(service, tmp_path, "a")
     add(service, tmp_path, "b", S.RUNNING, S.DONE)
     add(service, tmp_path, "c", S.CANCELLED)
-    (service.store.uploads_root / "c").mkdir(parents=True)
+    (service.store.work_dir("c") / "input").mkdir(parents=True)
     await open_page(user)
 
     user.find(kind=ui.button, content="Clear finished").click()
@@ -487,6 +489,9 @@ async def test_browser_files_are_uploaded_when_added(service, selections, user: 
 
     jobs = service.jobs()
     assert [spec.display_name for spec, _ in jobs] == ["b", "c"]
-    assert [spec.source for spec, _ in jobs] == staged[1:]
-    assert all(spec.source.parent.name == spec.id for spec, _ in jobs)  # removed with the job
+    assert [spec.id for spec, _ in jobs] == [path.parent.name for path in staged[1:]]
+    assert all(
+        spec.source == service.store.work_dir(spec.id) / "input" / spec.display_name
+        for spec, _ in jobs
+    )
     assert selection.paths == [] and selection.uploads == set()

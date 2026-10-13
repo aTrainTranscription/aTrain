@@ -2,6 +2,7 @@ import json
 import multiprocessing as mp
 import os
 import platform
+from contextlib import suppress
 from importlib.resources import files
 from importlib.util import find_spec
 from pathlib import Path
@@ -83,6 +84,37 @@ METADATA_FILENAME = "metadata.txt"
 LOG_FILENAME = "log.txt"
 TIMESTAMP_FORMAT = "%Y-%m-%d %H-%M-%S"
 DURATION_FORMAT = "{:02}:{:02}:{:02}"  # hours, minutes, seconds; hours may exceed 24
+
+
+def create_file_id(file_path, timestamp):
+    """Creates a unique identifier for a file composed of the file path and timestamp."""
+    file_base_name = os.path.basename(file_path)
+    timestamp = timestamp.replace(" ", "-").replace("-", "")
+    timestamp = timestamp[:-2]
+    timestamp = timestamp[2:]
+    short_base_name = file_base_name[0:7] if len(file_base_name) >= 5 else file_base_name
+    return timestamp + "-" + short_base_name
+
+
+def free_file_id(file_path, timestamp, transcript_root=TRANSCRIPT_DIR) -> str:
+    """A file_id no archive folder has yet. Adds -2, -3, ... in the same minute."""
+    base_file_id = create_file_id(file_path, timestamp)
+    file_id, suffix = base_file_id, 1
+    while os.path.exists(os.path.join(transcript_root, file_id)):
+        suffix += 1
+        file_id = f"{base_file_id}-{suffix}"
+    return file_id
+
+
+def claim_file_id(file_path, timestamp, transcript_root=TRANSCRIPT_DIR) -> str:
+    """Create a new archive folder and return its file_id, so two transcriptions never
+    share one (also across processes)."""
+    os.makedirs(transcript_root, exist_ok=True)
+    while True:
+        file_id = free_file_id(file_path, timestamp, transcript_root)
+        with suppress(FileExistsError):
+            os.makedirs(os.path.join(transcript_root, file_id))
+            return file_id
 
 
 def hms(seconds: float) -> str:

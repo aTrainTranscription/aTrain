@@ -3,7 +3,6 @@ import os
 import shutil
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -18,65 +17,12 @@ from aTrain_core.globals import (
     METADATA_FILENAME,
     TIMESTAMP_FORMAT,
     TRANSCRIPT_DIR,
+    claim_file_id,  # noqa: F401
+    create_file_id,  # noqa: F401
+    free_file_id,  # noqa: F401
     write_json_atomic,
 )
 from aTrain_core.settings import Settings
-
-
-def create_file_id(file_path, timestamp):
-    """Creates a unique identifier for a file composed of the file path and timestamp."""
-    # Extract filename from file_path
-    file_base_name = os.path.basename(file_path)
-    # Use rsplit to split from the right at most once
-
-    timestamp = timestamp.replace(" ", "-").replace("-", "")
-    timestamp = timestamp[:-2]
-    timestamp = timestamp[2:]
-
-    short_base_name = file_base_name[0:7] if len(file_base_name) >= 5 else file_base_name
-    file_id = timestamp + "-" + short_base_name
-    return file_id
-
-
-def free_file_id(file_path, timestamp) -> str:
-    """A file_id no archive folder has yet. Adds -2, -3, ... in the same minute."""
-    base_file_id = create_file_id(file_path, timestamp)
-    file_id, suffix = base_file_id, 1
-    while os.path.exists(os.path.join(TRANSCRIPT_DIR, file_id)):
-        suffix += 1
-        file_id = f"{base_file_id}-{suffix}"
-    return file_id
-
-
-def claim_file_id(file_path, timestamp) -> str:
-    """Create a new archive folder and return its file_id, so two transcriptions never
-    share one (also across processes)."""
-    os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
-    while True:
-        file_id = free_file_id(file_path, timestamp)
-        with suppress(FileExistsError):
-            os.makedirs(os.path.join(TRANSCRIPT_DIR, file_id))
-            return file_id
-
-
-PENDING_DIR = ".pending"  # hidden in the archive: outputs are written here, then published
-
-
-def fresh_output_dir(file_id: str) -> Path:
-    """An output folder hidden in the archive, so publish() can move it in with one rename
-    on the same file system. Removes what an interrupted attempt left in .pending."""
-    pending = Path(TRANSCRIPT_DIR) / PENDING_DIR
-    shutil.rmtree(pending, ignore_errors=True)
-    return pending / file_id
-
-
-def publish(directory: Path) -> None:
-    """Move a complete output folder (from fresh_output_dir) into the archive in one step,
-    so the archive never shows a half-written transcription. Its name is its file_id."""
-    target = Path(TRANSCRIPT_DIR) / directory.name
-    if target.exists():
-        raise FileExistsError(f"The archive already has a folder {directory.name}")
-    os.rename(directory, target)
 
 
 def create_output_files(result, speaker_detection, directory: Path, subtitles=None):
@@ -266,7 +212,7 @@ def write_final_outputs(
         return []
     target = Path(export_dir) / file_id
     try:
-        shutil.copytree(directory, target, dirs_exist_ok=True)
+        shutil.copytree(directory, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".pending"))
     except OSError as e:
         warning = f"Copy to {target} failed: {e}"
         log(warning)

@@ -50,8 +50,8 @@ class FakeHandle:
                 source=job.spec.source,
             )
         else:
-            file_id = f"{job_id}-archive"
-            (outputs.TRANSCRIPT_DIR / file_id).mkdir(parents=True)
+            file_id = job.work_dir.parent.name
+            (outputs.TRANSCRIPT_DIR / file_id).mkdir(parents=True, exist_ok=True)
             yield JobDone(job_id, file_id, 5, [])
         # events sent before a kill still arrive
         yield PhaseDied(-9) if self.killed.is_set() else PhaseFinished()
@@ -87,7 +87,7 @@ class FakeLauncher:
 def env(tmp_path, monkeypatch):
     monkeypatch.setattr(outputs, "TRANSCRIPT_DIR", tmp_path / "transcriptions")
     launcher = FakeLauncher()
-    store = JobStore(tmp_path / "queue")
+    store = JobStore(tmp_path / "queue", tmp_path / "transcriptions")
     service = QueueService(
         store, launch_phase1=launcher.launch(1), launch_phase2=launcher.launch(2)
     )
@@ -136,15 +136,14 @@ async def test_job_without_speaker_detection_is_done_in_phase_1(started):
     staged = store.uploads_root / "a" / "a.mp3"
     staged.parent.mkdir(parents=True)
     staged.write_bytes(b"audio")
-    store.work_dir("a").mkdir(parents=True)
     job = spec(tmp_path, "a")
     service.enqueue([job.__class__.from_json({**job.to_json(), "source": str(staged)})])
     await settle(service)
 
     state = store.get("a")[1]
-    assert state.status == JobStatus.DONE and state.file_id == "a-archive"
+    assert state.status == JobStatus.DONE and state.file_id == store.work_dir("a").parent.name
     assert [phase for phase, _ in launcher.launches] == [1]
-    assert not store.work_dir("a").exists() and not staged.parent.exists()
+    assert not store.work_dir("a").exists() and not store.get("a")[0].source.exists()
 
 
 async def test_speaker_detection_runs_right_after_the_transcription(started):
@@ -224,6 +223,49 @@ async def test_cancel_the_running_job(started):
     assert status(store, "a") == JobStatus.CANCELLED and not service.cancelling
     assert status(store, "b") == JobStatus.DONE
     assert len(launcher.launches) == 2  # b ran in a new child
+
+
+async def test_clear_stops_running_job_before_removing_all_queue_files(started):
+    tmp_path, store, service, launcher = started
+    launcher.outcomes["a"] = "hang"
+    service.enqueue([spec(tmp_path, "a", speaker_detection=True), spec(tmp_path, "b")])
+    await until(lambda: status(store, "a") == JobStatus.RUNNING)
+    pending = [store.work_dir(job_id) for job_id in "ab"]
+    for directory in pending:
+        (directory / "raw_transcript.json").write_text("checkpoint")
+
+    await service.clear()
+
+    assert launcher.handles[0].killed.is_set()
+    assert launcher.dispatched() == ["a"]  # no diarization or next job after the cancel
+    assert service._handle is None and service._in_flight is None
+    assert service.jobs() == JobStore(store.root, store.transcript_root).jobs() == []
+    assert all(not directory.parent.exists() for directory in pending)
+    assert all((tmp_path / f"{job_id}.mp3").exists() for job_id in "ab")
+    service.enqueue([spec(tmp_path, "c")])
+    await settle(service)
+    assert status(store, "c") == JobStatus.DONE
+
+
+async def test_clear_waits_for_final_child_events_and_blocks_new_jobs(started):
+    tmp_path, store, service, launcher = started
+    launcher.gates["a"] = asyncio.Event()
+    service.enqueue([spec(tmp_path, "a", speaker_detection=True)])
+    await until(lambda: launcher.dispatched() == ["a"])
+    clearing = asyncio.create_task(service.clear())
+    await until(lambda: launcher.handles[0].killed.is_set())
+
+    assert not clearing.done()
+    assert store.work_dir("a").exists()
+    with pytest.raises(ValueError, match="being cleared"):
+        service.enqueue([spec(tmp_path, "b")])
+    service.resume()  # another page must not start the second phase during deletion
+    launcher.gates["a"].set()
+    await clearing
+
+    assert service.jobs() == []
+    assert [phase for phase, _ in launcher.launches] == [1]
+    assert list(store.transcript_root.iterdir()) == []
 
 
 async def test_cancel_while_the_transcription_ends(started):
@@ -357,6 +399,8 @@ async def test_recovery_after_a_restart(env):
     )
     for job_id in ("a", "abandoned"):
         (store.uploads_root / job_id).mkdir(parents=True)
+    abandoned = store.transcript_root / "abandoned" / ".pending"
+    abandoned.mkdir(parents=True)
     service.pause()
 
     await service.start()
@@ -365,6 +409,8 @@ async def test_recovery_after_a_restart(env):
         assert (store.work_dir("b") / RAW_CHECKPOINT).is_file()  # phase 1 reuses it
         # uploads of a page that was closed before they became jobs are deleted
         assert [folder.name for folder in store.uploads_root.iterdir()] == ["a"]
+        assert not abandoned.parent.exists()
+        assert store.work_dir("a").exists()
     finally:
         await service.stop()
 

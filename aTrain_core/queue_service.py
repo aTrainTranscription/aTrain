@@ -54,6 +54,9 @@ class QueueService:
         self._wake = asyncio.Event()
         self._scheduler_task: asyncio.Task | None = None
         self._stopping = False
+        self._clearing = False
+        self._idle = asyncio.Event()
+        self._idle.set()
         # the running phase
         self.step = Step.TRANSCRIPTION  # what the running child does
         self.progress = 0.0  # of the running child, 0 to 1
@@ -77,6 +80,13 @@ class QueueService:
         for folder in self.store.uploads_root.glob("*"):
             if folder.name not in job_ids:
                 shutil.rmtree(folder, ignore_errors=True)
+        states = {state.file_id: state for _, state in self.store.jobs()}
+        for pending in self.store.transcript_root.glob("*/.pending"):
+            state = states.get(pending.parent.name)
+            if state is None:
+                shutil.rmtree(pending.parent, ignore_errors=True)
+            elif state.status == JobStatus.DONE:
+                shutil.rmtree(pending, ignore_errors=True)
         self._scheduler_task = asyncio.create_task(self._scheduler())
         self._wake.set()
 
@@ -95,8 +105,30 @@ class QueueService:
     # --- commands ---------------------------------------------------------------------
 
     def enqueue(self, specs: list[JobSpec]) -> None:
+        if self._clearing:
+            raise ValueError("The queue is being cleared. Try again when deletion finishes.")
         self.store.add(specs)
         self._wake.set()
+
+    async def clear(self) -> None:
+        """Stop every unfinished job and remove all queue entries and their working files."""
+        if self._clearing:
+            raise ValueError("The queue is already being cleared.")
+        was_paused = self.paused
+        self._clearing = True
+        self.pause()
+        try:
+            await self.cancel([spec.id for spec, _ in self.jobs()])
+            # kill() can return before the scheduler drains the child's final events.
+            # Wait until it can no longer publish outputs or update deleted entries.
+            await self._idle.wait()
+            for spec, _ in self.jobs():
+                self.store.remove(spec.id)
+        finally:
+            self._clearing = False
+            self.paused = was_paused
+            if not was_paused:
+                self._wake.set()
 
     async def cancel(self, job_ids: list[str]) -> None:
         handle = None
@@ -172,7 +204,10 @@ class QueueService:
         while not self._stopping:
             await self._wake.wait()
             self._wake.clear()
-            while not (self._stopping or self.paused) and (spec := self._head()) is not None:
+            while (
+                not (self._stopping or self.paused or self._clearing)
+                and (spec := self._head()) is not None
+            ):
                 await self._run_job(spec)
 
     def _head(self) -> JobSpec | None:
@@ -184,17 +219,19 @@ class QueueService:
     async def _run_job(self, spec: JobSpec) -> None:
         """The transcription, then the speaker detection. The children reuse what the job's
         checkpoints hold, so a job that comes back into the queue redoes only what is missing."""
+        self._idle.clear()
         try:
             if not (await self._run_phase(Step.TRANSCRIPTION, spec) and spec.speaker_detection):
                 return
             if self.cancelling:  # transcribed just before the kill
                 self._guarded(spec.id, self.store.update, spec.id, status=JobStatus.CANCELLED)
-            elif self.paused or self._stopping:
+            elif self.paused or self._stopping or self._clearing:
                 self._guarded(spec.id, self.store.update, spec.id, status=JobStatus.QUEUED)
             else:
                 await self._run_phase(Step.DIARIZATION, spec)
         finally:
             self.cancelling = False
+            self._idle.set()
 
     async def _run_phase(self, step: Step, spec: JobSpec) -> bool:
         """Run one child for the job. True if it ended without a result or a crash: it did

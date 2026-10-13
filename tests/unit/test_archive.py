@@ -82,6 +82,14 @@ def test_read_directories_sorted_reverse_dirs_only(archive_root):
     assert archive.read_directories() == ["c", "b", "a"]
 
 
+def test_read_directories_hides_pending_folder(archive_root):
+    (archive_root / "running" / ".pending").mkdir(parents=True)
+    (archive_root / "finished").mkdir()
+    (archive_root / ".uploads").mkdir()
+
+    assert archive.read_directories() == ["finished"]
+
+
 # --- read_metadata_file ----------------------------------------------------
 
 

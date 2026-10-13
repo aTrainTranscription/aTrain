@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from filelock import FileLock, Timeout
+from werkzeug.utils import secure_filename
 
-from aTrain_core.globals import write_json_atomic
+from aTrain_core.globals import TIMESTAMP_FORMAT, TRANSCRIPT_DIR, claim_file_id, write_json_atomic
 from aTrain_core.settings import ComputeType, Device, ModelKey, Settings
 
 SCHEMA_VERSION = 1
@@ -30,7 +31,7 @@ class JobSpec:
     """What to do. Fixed once the job is created; all settings are captured when it is added."""
 
     id: str  # uuid4 hex
-    source: Path  # absolute; for browser uploads the staged copy in queue/uploads/<id>/
+    source: Path  # absolute; browser uploads live in the job's .pending/input/
     display_name: str  # original file name
     model: str
     language: str
@@ -108,7 +109,7 @@ class JobState:
     """Where the job is. Owned by the queue service."""
 
     status: JobStatus = JobStatus.QUEUED
-    file_id: str | None = None  # archive folder, once DONE
+    file_id: str | None = None  # final archive folder, reserved before processing
     started_at: str | None = None  # metadata timestamp of the current run
     finished_at: str | None = None
     audio_duration: int | None = None
@@ -138,11 +139,11 @@ class JobStore:
     """The queue on disk: one queue.json under `root`, rewritten atomically on every change.
     List order is queue order."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, transcript_root: Path = TRANSCRIPT_DIR):
         self.root = root
         self.path = root / QUEUE_FILENAME
-        self.work_root = root / "work"
-        self.uploads_root = root / "uploads"
+        self.transcript_root = transcript_root
+        self.uploads_root = self.transcript_root / ".uploads"
         self._jobs: list[tuple[JobSpec, JobState]] = self._load()
 
     def reload(self) -> None:
@@ -155,8 +156,32 @@ class JobStore:
             if spec.id in known:
                 raise ValueError(f"Job {spec.id} is already in the queue")
             known.add(spec.id)
-        jobs = self._jobs + [(spec, JobState()) for spec in specs]
-        self._save(jobs)
+        added, claimed, moved = [], [], []
+        now = datetime.now().strftime(TIMESTAMP_FORMAT)
+        try:
+            for spec in specs:
+                file_id = claim_file_id(
+                    secure_filename(spec.display_name), now, self.transcript_root
+                )
+                final = self.transcript_root / file_id
+                claimed.append(final)
+                pending = final / ".pending"
+                pending.mkdir()
+                if spec.source.parent.parent == self.uploads_root:
+                    source = pending / "input" / spec.source.name
+                    source.parent.mkdir()
+                    shutil.move(spec.source, source)
+                    moved.append((source, spec.source))
+                    spec = replace(spec, source=source)
+                added.append((spec, JobState(file_id=file_id)))
+            jobs = self._jobs + added
+            self._save(jobs)
+        except BaseException:
+            for source, original in moved:
+                shutil.move(source, original)
+            for final in claimed:
+                shutil.rmtree(final, ignore_errors=True)
+            raise
         self._jobs = jobs
 
     def get(self, job_id: str) -> tuple[JobSpec, JobState]:
@@ -187,32 +212,39 @@ class JobStore:
 
     def remove(self, job_id: str) -> None:
         """Remove the entry and delete its work folder and staged upload.
-        A source outside queue/uploads/ is never touched."""
+        Original source files are never touched."""
         jobs = self._jobs.copy()
-        del jobs[self._index(job_id)]
+        spec, state = jobs.pop(self._index(job_id))
         self._save(jobs)
         self._jobs = jobs
-        self._delete_files(job_id)
+        self._delete_files(spec.id, state)
 
     def clear_finished(self, job_ids: Collection[str]) -> None:
         """Remove the entries of `job_ids` that are still finished, with their files."""
         finished = [
-            spec.id
+            (spec.id, state)
             for spec, state in self._jobs
             if spec.id in job_ids and state.status in FINAL_STATUSES
         ]
-        jobs = [job for job in self._jobs if job[0].id not in finished]
+        finished_ids = {job_id for job_id, _ in finished}
+        jobs = [job for job in self._jobs if job[0].id not in finished_ids]
         self._save(jobs)
         self._jobs = jobs
-        for job_id in finished:
-            self._delete_files(job_id)
+        for job_id, state in finished:
+            self._delete_files(job_id, state)
 
-    def _delete_files(self, job_id: str) -> None:
-        shutil.rmtree(self.work_dir(job_id), ignore_errors=True)
+    def _delete_files(self, job_id: str, state: JobState) -> None:
+        if state.file_id:
+            final = self.transcript_root / state.file_id
+            if state.status == JobStatus.DONE:
+                shutil.rmtree(final / ".pending", ignore_errors=True)
+            else:
+                shutil.rmtree(final, ignore_errors=True)
         shutil.rmtree(self.uploads_root / job_id, ignore_errors=True)
 
     def work_dir(self, job_id: str) -> Path:
-        return self.work_root / job_id
+        _, state = self.get(job_id)
+        return self.transcript_root / state.file_id / ".pending"
 
     def _index(self, job_id: str) -> int:
         for index, (spec, _) in enumerate(self._jobs):
