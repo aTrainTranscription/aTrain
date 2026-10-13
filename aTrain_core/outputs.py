@@ -18,8 +18,6 @@ from aTrain_core.globals import (
     TIMESTAMP_FORMAT,
     TRANSCRIPT_DIR,
     claim_file_id,  # noqa: F401
-    create_file_id,  # noqa: F401
-    free_file_id,  # noqa: F401
     write_json_atomic,
 )
 from aTrain_core.settings import Settings
@@ -212,7 +210,9 @@ def write_final_outputs(
         return []
     target = Path(export_dir) / file_id
     try:
-        shutil.copytree(directory, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".pending"))
+        shutil.copytree(
+            directory, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".pending")
+        )
     except OSError as e:
         warning = f"Copy to {target} failed: {e}"
         log(warning)

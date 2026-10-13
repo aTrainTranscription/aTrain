@@ -327,6 +327,27 @@ async def test_remove_asks_first(service, tmp_path, user: User):
     await until(lambda: service.jobs() == [])
 
 
+@pytest.mark.parametrize("action", ["close", "Clear finished"])
+async def test_remove_confirmation_handles_a_missing_job(
+    service, tmp_path, user: User, monkeypatch, action
+):
+    add(service, tmp_path, "x", S.FAILED)
+    await open_page(user)
+
+    def missing(job_id):
+        raise KeyError(job_id)
+
+    monkeypatch.setattr(service.store, "work_dir", missing)
+    user.find(kind=ui.button, content=action).click()
+    await user.should_see(
+        "Remove x.mp3 from the queue?"
+        if action == "close"
+        else "Remove 1 finished, failed or cancelled job from the queue?"
+    )
+    await user.should_not_see("uploaded file")
+    user.find("Back").click()
+
+
 async def test_clear_finished_keeps_the_others(service, tmp_path, user: User):
     add(service, tmp_path, "a")
     add(service, tmp_path, "b", S.RUNNING, S.DONE)

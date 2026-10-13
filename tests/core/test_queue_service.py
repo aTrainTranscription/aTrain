@@ -386,10 +386,15 @@ async def test_recovery_after_a_restart(env):
             spec(tmp_path, "a"),
             spec(tmp_path, "b", speaker_detection=True),
             spec(tmp_path, "c", speaker_detection=True),
+            spec(tmp_path, "done"),
         ]
     )
     for job_id in "abc":
         store.update(job_id, status=JobStatus.RUNNING)
+    store.update("done", status=JobStatus.DONE)
+    done_pending = store.work_dir("done")
+    output = done_pending.parent / "transcription.txt"
+    output.write_text("Finished transcript")
     b_spec = store.get("b")[0]
     outputs.write_checkpoint(
         store.work_dir("b") / RAW_CHECKPOINT,
@@ -409,6 +414,8 @@ async def test_recovery_after_a_restart(env):
         assert (store.work_dir("b") / RAW_CHECKPOINT).is_file()  # phase 1 reuses it
         # uploads of a page that was closed before they became jobs are deleted
         assert [folder.name for folder in store.uploads_root.iterdir()] == ["a"]
+        assert not done_pending.exists()
+        assert output.read_text() == "Finished transcript"
         assert not abandoned.parent.exists()
         assert store.work_dir("a").exists()
     finally:
