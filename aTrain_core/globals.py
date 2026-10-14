@@ -1,10 +1,12 @@
+import json
 import multiprocessing as mp
 import os
 import platform
+from contextlib import suppress
 from importlib.resources import files
 from importlib.util import find_spec
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from platformdirs import user_data_path, user_documents_path
 
@@ -81,6 +83,57 @@ TRANSCRIPT_DIR = ATRAIN_DIR / "transcriptions"
 METADATA_FILENAME = "metadata.txt"
 LOG_FILENAME = "log.txt"
 TIMESTAMP_FORMAT = "%Y-%m-%d %H-%M-%S"
+DURATION_FORMAT = "{:02}:{:02}:{:02}"  # hours, minutes, seconds; hours may exceed 24
+
+
+def create_file_id(file_path, timestamp):
+    """Creates a unique identifier for a file composed of the file path and timestamp."""
+    file_base_name = os.path.basename(file_path)
+    timestamp = timestamp.replace(" ", "-").replace("-", "")
+    timestamp = timestamp[:-2]
+    timestamp = timestamp[2:]
+    short_base_name = file_base_name[0:7] if len(file_base_name) >= 5 else file_base_name
+    return timestamp + "-" + short_base_name
+
+
+def free_file_id(file_path, timestamp, transcript_root=TRANSCRIPT_DIR) -> str:
+    """A file_id no archive folder has yet. Adds -2, -3, ... in the same minute."""
+    base_file_id = create_file_id(file_path, timestamp)
+    file_id, suffix = base_file_id, 1
+    while os.path.exists(os.path.join(transcript_root, file_id)):
+        suffix += 1
+        file_id = f"{base_file_id}-{suffix}"
+    return file_id
+
+
+def claim_file_id(file_path, timestamp, transcript_root=TRANSCRIPT_DIR) -> str:
+    """Create a new archive folder and return its file_id, so two transcriptions never
+    share one (also across processes)."""
+    os.makedirs(transcript_root, exist_ok=True)
+    while True:
+        file_id = free_file_id(file_path, timestamp, transcript_root)
+        with suppress(FileExistsError):
+            os.makedirs(os.path.join(transcript_root, file_id))
+            return file_id
+
+
+def hms(seconds: float) -> str:
+    """Seconds as hh:mm:ss (DURATION_FORMAT)."""
+    seconds = int(seconds)
+    return DURATION_FORMAT.format(seconds // 3600, seconds % 3600 // 60, seconds % 60)
+
+
+def write_json_atomic(path: Path, data: Any, **dump_options) -> None:
+    """Write `data` so a reader sees the old file or the complete new one, also after a crash."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, **dump_options)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+
+
 SAMPLING_RATE = 16000
 DEFAULT_CPU_THREADS = max(1, count - 1) if (count := os.cpu_count()) else 4
 MAX_CPU_THREADS = os.cpu_count() or DEFAULT_CPU_THREADS

@@ -5,19 +5,29 @@ from aTrain_core.settings import ComputeType
 from nicegui import ElementFilter, app, ui
 
 
-def advanced_settings(open: bool):
-    with ui.dialog(value=open) as dialog, ui.card() as card:
-        dialog.props("position=right full-height").classes("[&>*]:p-0")
-        card.props("square").classes("w-72 xl:w-96 p-6 gap-6")
-        ui.label("Advanced Settings").classes("text-lg text-dark font-bold")
+def advanced_settings_body():
+    seed_defaults()
+    with ui.column().classes("w-full max-w-xl gap-6"):
         input_gpu()
         input_compute_type()
         input_cpu_threads()
         input_temperature()
         input_initial_prompt()
-        btn = ui.button("Ok", color="dark").props("unelevated no-caps")
-        btn.on_click(dialog.close)
-        dialog.on("hide", dialog.delete)
+
+
+def seed_defaults():
+    """The defaults of the advanced settings, written once for both pages: the transcribe page
+    needs them to add a job without the Advanced Settings page having been opened."""
+    from torch import cuda  # Lazy import for improved startup speed
+
+    state = app.storage.general
+    state["GPU"] = cuda.is_available() and state.get("GPU", True)
+    state.setdefault("cpu_threads", DEFAULT_CPU_THREADS)
+    if not state["GPU"] or not state.get("compute_type"):
+        state["compute_type"] = ComputeType.INT8.value
+    # Fix wrong default setting from version 1.4.0, TODO: Revert the name of the state
+    # "temperature_override" to "temperature" in upcoming releases
+    state["temperature"] = None
 
 
 def input_gpu():
@@ -30,12 +40,9 @@ def input_gpu():
             ui.label("GPU acceleration").classes("font-bold text-dark")
             ui.icon("info_outline", size="sm", color="grey").tooltip(tooltip)
         ui.separator()
-        if cuda.is_available():
-            switch = ui.switch("GPU", value=True).props("color=dark")
-        else:
-            switch = ui.switch("GPU", value=False).props("color=dark disable")
-            state["GPU"] = False
-        switch.mark("switch_gpu")
+        switch = ui.switch("GPU").props("color=dark").mark("switch_gpu")
+        if not cuda.is_available():
+            switch.props("disable")
     switch.bind_value(state, "GPU")
     switch.on_value_change(set_compute_options)
 
@@ -48,8 +55,7 @@ def input_compute_type():
             ui.label("Compute Type").classes("font-bold text-dark")
             ui.icon("info_outline", size="sm", color="grey").tooltip(tooltip)
         ui.separator()
-        value = state.get("compute_type") or ComputeType.INT8.value
-        select = ui.select(options=[x.value for x in ComputeType], value=value)
+        select = ui.select(options=[x.value for x in ComputeType], value=state["compute_type"])
         select.props("filled bg-color=gray-100 color=dark").classes("w-full")
         select.bind_value(state, "compute_type").mark("select_compute")
     set_compute_options()
@@ -71,7 +77,7 @@ def input_cpu_threads():
                 max=MAX_CPU_THREADS,
                 step=1,
                 precision=0,
-                value=state.get("cpu_threads", DEFAULT_CPU_THREADS),
+                value=state["cpu_threads"],
             )
             number.props("filled bg-color=gray-100 color=dark").classes("flex-grow")
             number.bind_value(state, "cpu_threads").mark("number_cpu_threads")
@@ -98,9 +104,6 @@ def input_temperature():
             reset_btn = ui.button(icon="refresh", color="gray-300").mark("button_reset_temperature")
             reset_btn.props("flat dense round size=sm").tooltip("Reset to default (auto)")
             reset_btn.on_click(lambda: number.set_value(None))
-
-    # Fix wrong default setting from version 1.4.0, TODO: Revert state name to "temperature" in upcoming releases
-    app.storage.general["temperature"] = None
 
 
 def input_initial_prompt():

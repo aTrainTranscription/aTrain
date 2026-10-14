@@ -19,8 +19,8 @@ def test_main_page_loads(atrain_server: str, page: Page) -> None:
     # only then the page renders. A cold import can take well over the 5 s
     # expect default on a CI runner, so wait explicitly for the handover.
     expect(page.get_by_text("Starting Application")).to_be_visible()
-    expect(page.get_by_text("Select File").first).to_be_visible(timeout=60_000)
-    expect(page.get_by_text("Speaker Detection").first).to_be_visible()
+    expect(page.get_by_text("Drop audio or video files")).to_be_visible(timeout=60_000)
+    expect(page.get_by_text("Speakers", exact=True)).to_be_visible()
 
 
 def test_about_page_loads(atrain_server: str, page: Page) -> None:

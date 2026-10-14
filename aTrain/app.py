@@ -1,9 +1,10 @@
+import importlib
 import os
 import sys
 from pathlib import Path
 from typing import Annotated, cast
 
-from aTrain_core.globals import ATRAIN_DIR, FLATPAK, REQUIRED_MODELS
+from aTrain_core.globals import ATRAIN_DIR, FLATPAK, LINUX, REQUIRED_MODELS
 from aTrain_core.load_resources import get_model
 from typer import Option, Typer
 
@@ -48,9 +49,16 @@ def start(
             user_config_path() / "aTrain" if FLATPAK else (ATRAIN_DIR / "settings")
         )
         with patch.dict(os.environ, NICEGUI_STORAGE_PATH=str(nicegui_storage_path)):
-            from nicegui import ui
+            from nicegui import app, background_tasks, run, ui
 
-            from aTrain.pages import about, archive, faq, models, transcribe  # noqa
+            from aTrain.pages import (  # noqa
+                about,
+                advanced,
+                archive,
+                faq,
+                models,
+                transcribe,
+            )
         from wakepy import keep
     except ImportError as e:
         sys.exit(
@@ -59,6 +67,13 @@ def start(
         )
 
     print("Running aTrain")
+
+    async def start_queue():
+        # In a thread: queue_ui loads the engine modules. Jobs of an earlier session continue.
+        queue_ui = await run.io_bound(importlib.import_module, "aTrain.utils.queue_ui")
+        await queue_ui.start_queue_service()
+
+    app.on_startup(lambda: background_tasks.create(start_queue(), name="start queue"))
 
     def ui_run(native: bool, reload: bool, show: bool, host: str, port: int):
         ui.run(
@@ -71,6 +86,12 @@ def start(
             host=host,
             port=port,
         )
+
+    if native and LINUX:
+        from aTrain.utils import linux_drop
+
+        # runs in the window process: file drops reach the page there (see linux_drop)
+        app.native.start_args["func"] = linux_drop.start
 
     if FLATPAK:
         ui_run(native, reload, show, host, port)

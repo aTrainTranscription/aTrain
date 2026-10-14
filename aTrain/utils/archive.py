@@ -4,6 +4,7 @@ import subprocess  # nosec B404 — used only with a static argv, never a shell
 import sys
 import zipfile
 from importlib.resources import files
+from pathlib import Path
 
 import yaml
 from aTrain_core.globals import METADATA_FILENAME, TRANSCRIPT_DIR
@@ -20,7 +21,13 @@ def read_archive() -> list:
 def read_directories() -> list:
     """A function that returns a list of all directories in the archive folder"""
     os.makedirs(TRANSCRIPT_DIR, exist_ok=True)
-    directories = [directory.name for directory in os.scandir(TRANSCRIPT_DIR) if directory.is_dir()]
+    directories = [
+        directory.name
+        for directory in os.scandir(TRANSCRIPT_DIR)
+        if directory.is_dir()
+        and not directory.name.startswith(".")
+        and not (Path(directory.path) / ".pending").exists()
+    ]
     directories.sort(reverse=True)
     return directories
 
@@ -54,6 +61,15 @@ def read_metadata_from_dir_name(directory) -> dict:
         "timestamp": directory[:20] if len(directory) >= 20 else "-",
     }
     return metadata
+
+
+async def delete_all_transcriptions() -> None:
+    """Stop and clear the queue before deleting the archive, including pending folders."""
+    from aTrain.utils.queue_ui import get_queue_service
+
+    service = await get_queue_service()
+    await service.clear()
+    delete_transcription("all")
 
 
 def delete_transcription(file_id) -> None:
@@ -91,7 +107,13 @@ def download_file_directory(file_id) -> None:
         if not os.path.exists(directory_zip):
             # from https://stackabuse.com/creating-a-zip-archive-of-a-directory-in-python/
             with zipfile.ZipFile(directory_zip, "w") as zipf:
-                for root, _dirs, files in os.walk(directory):
+                for root, dirs, files in os.walk(directory):
+                    dirs[:] = [
+                        name
+                        for name in dirs
+                        if not name.startswith(".")
+                        and not (Path(root) / name / ".pending").exists()
+                    ]
                     for file in files:
                         zipf.write(
                             os.path.join(root, file),
