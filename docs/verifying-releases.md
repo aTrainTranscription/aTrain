@@ -18,9 +18,14 @@ Every release is a git tag `v<version>` and a GitHub release built from it by
 | `aTrain-<version>-windows.cdx.json` | GitHub release | CycloneDX SBOM of the Windows build. |
 | `aTrain-<version>-source.tar.gz` | GitHub (tag archive) | Source at the tag; its hash is in `checksums.txt`. |
 
-Do not take the installer from the workflow run under Actions: that artifact
-is the build before signing, and its hash is not the one in `checksums.txt`.
-The signed installer only exists on Zenodo.
+Under Actions, the `aTrain-msix-<version>` workflow artifact contains the
+unsigned build; its installer hash does not match the release's `checksums.txt`.
+The `signed-aTrain-<version>` workflow artifact contains the signed installer
+and is a temporary alternative download source to Zenodo. The repository's
+Actions artifact retention is set to 90 days, so GitHub automatically deletes
+the artifact 90 days after upload unless it is manually deleted sooner.
+Use Zenodo for long-term downloads. Verify either download against the
+checksums published on the GitHub release.
 
 ## 1. Compare the checksum
 

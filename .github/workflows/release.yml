@@ -43,7 +43,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       suffix: ${{ steps.version.outputs.suffix }}
-      # Consumed by the signing step in the publish job.
+      # Consumed by the signing step in the sign-windows-msix job.
       artifact-id: ${{ steps.upload.outputs.artifact-id }}
     # Build ~13 min, plus ~13 min to push the 2.9 GB installer to Zenodo -
     # too close to the previous 30 min limit to absorb network variance.
@@ -224,11 +224,11 @@ jobs:
           # An MSIX is already a zip - re-compressing 2.9 GB buys nothing.
           compression-level: 0
 
-  publish:
-    name: Publish release artifacts
-    # Fan-in: the build jobs only produce artifacts, everything that talks to
-    # the outside world (GitHub release, Zenodo, signing later) happens here -
-    # once per release, with all artifacts in hand. Adding the EXE (#221) or
+  sign-windows-msix:
+    name: Sign Windows MSIX
+    # Fan-in: the build jobs only produce artifacts, signing and the GitHub
+    # release happen here, the Zenodo upload in `publish-to-zenodo` - once per
+    # release, with all artifacts in hand. Adding the EXE (#221) or
     # Flatpak means adding a build job and listing it in `needs`.
     needs: build-windows-msix
     if: startsWith(github.ref, 'refs/tags/v')
@@ -329,17 +329,57 @@ jobs:
               "$checksums" aTrain-*.cdx.json
           fi
 
+      - name: Keep the signed files as a workflow artifact
+        # `publish-to-zenodo` downloads them from here, so a failed upload can
+        # be re-run on its own without signing again. `overwrite` because a
+        # re-run of this job would otherwise fail on the existing name. Named
+        # `signed-aTrain-*`, outside the `aTrain-*-<version>` pattern the
+        # download step above uses, so a re-run never mixes it into `artifacts/`.
+        uses: actions/upload-artifact@v7
+        with:
+          name: signed-aTrain-${{ needs.build-windows-msix.outputs.version }}${{ needs.build-windows-msix.outputs.suffix }}
+          path: |
+            artifacts/aTrain-*
+            artifacts/checksums*.txt
+          if-no-files-found: error
+          overwrite: true
+          # The MSIX is already a zip - see the build job.
+          compression-level: 0
+
+  publish-to-zenodo:
+    name: Publish to Zenodo (draft)
+    # A job of its own (#305): a 3 GB upload to an external service can fail
+    # (502s) and is re-run with "Re-run failed jobs" without signing again.
+    needs: [build-windows-msix, sign-windows-msix]
+    # Slim builds only: the bundled variant is an internal build, not a
+    # published release artifact.
+    if: startsWith(github.ref, 'refs/tags/v') && !inputs.bundle_models
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # Here rather than on the steps: the `secrets` context is not available
+      # in a step-level `if`, the `env` one is.
+      ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download the signed files
+        if: env.ZENODO_TOKEN != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: signed-aTrain-${{ needs.build-windows-msix.outputs.version }}${{ needs.build-windows-msix.outputs.suffix }}
+          path: artifacts
+
       - name: Upload installers to Zenodo (draft)
         # Zenodo is the download channel for the installers (#229). Creates a
         # DRAFT only - a maintainer publishes it in the Zenodo UI, which also
-        # submits it to the community. Slim builds only: the bundled variant
-        # is an internal build, not a published release artifact.
+        # submits it to the community.
         # The `aTrain-*` glob carries the SBOM into the record as well, so the
         # archived version stays readable without the GitHub release next to it.
         # The script is runnable locally, see `zenodo-upload.sh --help`.
-        if: ${{ !inputs.bundle_models }}
         env:
-          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
           # No default on purpose: production vs sandbox is an explicit choice.
           ZENODO_BASE: ${{ vars.ZENODO_BASE }}
           # The published record's `conceptrecid`, set once: every later
