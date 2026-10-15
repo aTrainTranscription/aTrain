@@ -61,7 +61,7 @@ def test_faster_whisper_transcriber_keeps_segments_without_word_timestamps():
     calls = []
     fake_model = SimpleNamespace(
         transcribe=lambda **kwargs: (
-            calls.append(kwargs) or (iter(segments), SimpleNamespace(duration=3.0))
+            calls.append(kwargs) or (iter(segments), SimpleNamespace(duration=3.0, language="de"))
         )
     )
     transcriber = object.__new__(engine.FasterWhisperTranscriber)
@@ -77,6 +77,7 @@ def test_faster_whisper_transcriber_keeps_segments_without_word_timestamps():
         log=log.append,
     )
 
+    assert transcript["language"] == "de"
     assert [s["text"] for s in transcript["segments"]] == ["Hello", "world.", "Yes."]
     assert calls[0]["language"] is None and calls[0]["condition_on_previous_text"] is True
     assert progress == {"task": "Transcribe", "current": 3.0, "total": 3.0}

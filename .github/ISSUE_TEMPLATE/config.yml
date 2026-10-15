@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/aTrainTranscription/aTrain/blob/develop/SECURITY.md
+    about: Please do not open a public issue for vulnerabilities. Follow SECURITY.md to report them privately.
