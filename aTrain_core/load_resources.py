@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import ssl
 from functools import partial
 from importlib.resources import files
 from multiprocessing.managers import DictProxy
@@ -11,6 +12,14 @@ from tqdm.auto import tqdm
 
 from aTrain_core.globals import MODELS_DIR, REQUIRED_MODELS, REQUIRED_MODELS_DIR
 from aTrain_core.integrity import ModelIntegrityError, find_missing_files, verify_model
+
+OFFLINE_INSTALL_DOCS = (
+    "https://github.com/aTrainTranscription/aTrain/blob/develop/docs/offline-model-install.md"
+)
+
+
+class ModelDownloadError(Exception):
+    """A model could not be downloaded, with a hint on what to do about it."""
 
 
 class custom_tqdm(tqdm):
@@ -52,9 +61,40 @@ def download_model(model_path: Path, model_info: dict, progress: DictProxy | Non
             local_dir_use_symlinks=False,
             max_workers=1,
         )
+    except Exception as error:
+        if _is_certificate_error(error):
+            raise ModelDownloadError(
+                f"Could not download model '{model_path.name}': the server certificate "
+                "could not be verified. A proxy in your network most likely inspects "
+                "HTTPS traffic with its own certificate. Ask your IT department, or "
+                f"install the model manually: {OFFLINE_INSTALL_DOCS}"
+            ) from error
+        raise
     finally:
         file_download.http_get = original_http_get
         file_download.xet_get = original_xet_get
+
+
+def _is_certificate_error(error: BaseException) -> bool:
+    """True if a certificate check failed anywhere in the exception chain.
+
+    The HTTP clients wrap it several layers deep (requests and urllib3 today,
+    httpx with huggingface_hub 1.x), so the chain is walked instead of
+    matching one client's exception type. urllib3 keeps the original error in
+    `args` and `reason` rather than chaining it, so those are followed too.
+    """
+    seen = set()
+    pending: list[BaseException] = [error]
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return True
+        linked = [current.__cause__, current.__context__, getattr(current, "reason", None)]
+        pending += [e for e in [*linked, *current.args] if isinstance(e, BaseException)]
+    return False
 
 
 def get_model(model: str, progress: DictProxy | None = None) -> Path:
