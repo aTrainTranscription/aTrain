@@ -57,15 +57,21 @@ def test_http_get_is_untouched_without_progress(tmp_path, stub_download):
 
 
 def _certificate_error():
-    """The chain requests raises when a proxy re-signs TLS with an unknown CA."""
+    """The shape of the chain requests raises when a proxy re-signs TLS.
+
+    requests.SSLError has MaxRetryError as its context, whose `reason` is a
+    urllib3 SSLError that holds the ssl error in `args` instead of chaining
+    it. Built from stdlib exceptions, since the unit job installs neither
+    requests nor urllib3.
+    """
     import ssl
 
-    import requests
-    from urllib3.exceptions import MaxRetryError
-    from urllib3.exceptions import SSLError as Urllib3SSLError
-
-    reason = Urllib3SSLError(ssl.SSLCertVerificationError(1, "unable to get local issuer"))
-    return requests.exceptions.SSLError(MaxRetryError(None, "/api/models/x", reason))
+    urllib3_error = OSError(ssl.SSLCertVerificationError(1, "unable to get local issuer"))
+    max_retry = OSError("Max retries exceeded")
+    max_retry.reason = urllib3_error
+    requests_error = OSError(max_retry)
+    requests_error.__context__ = max_retry
+    return requests_error
 
 
 def test_certificate_error_points_to_manual_install(tmp_path, monkeypatch):
