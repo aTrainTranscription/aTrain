@@ -13,6 +13,8 @@ project overview, badges, and benchmarks, see the [main README](../README.md).
   Ubuntu / Debian.
 - [Windows deployment](deployment-windows.md) — MSIX rollout on managed
   machines, for IT departments.
+- [Installing models without Hugging Face access](offline-model-install.md) —
+  placing models by hand, and proxies that inspect TLS.
 - [Linux service](linux/service.md) — running aTrain as a systemd service,
   experimental.
 - [Uninstalling aTrain](uninstall.md) — removing the app and its data for
