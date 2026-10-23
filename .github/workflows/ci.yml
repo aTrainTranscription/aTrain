@@ -351,15 +351,23 @@ jobs:
         # `script` gives the app a pty, so its stdout is line-buffered (a frozen
         # app ignores PYTHONUNBUFFERED). Wait for the frontend to connect, the
         # deferred runtime imports to finish, and the root page to be built.
+        # Polls: a first launch on a fresh runner can take over a minute.
         env:
           ATRAIN_USER_DIR: ${{ runner.temp }}/atrain-startup
+          STARTUP_TIMEOUT: "300"
         shell: bash
         run: |
           set -euo pipefail
           script -q app-start.log dist/aTrain.app/Contents/MacOS/aTrain > /dev/null 2>&1 &
           pid=$!
           status=0
-          sleep 60
+          for _ in $(seq "$STARTUP_TIMEOUT"); do
+            kill -0 "$pid" 2>/dev/null || break
+            grep -Eq "^aTrain startup ready|aTrain startup failed|Traceback \(most recent call last\):" app-start.log && break
+            sleep 1
+          done
+          # A crash right after "ready" still fails the check.
+          sleep 5
           if ! kill -0 "$pid" 2>/dev/null; then
             echo "::error::App exited during startup"
             status=1
@@ -435,15 +443,23 @@ jobs:
         # `script` gives the app a pty, so its stdout is line-buffered (a frozen
         # app ignores PYTHONUNBUFFERED). Wait for the frontend to connect, the
         # deferred runtime imports to finish, and the root page to be built.
+        # Polls: a first launch on a fresh runner can take over a minute.
         env:
           ATRAIN_USER_DIR: ${{ runner.temp }}/atrain-startup
+          STARTUP_TIMEOUT: "300"
         shell: bash
         run: |
           set -euo pipefail
           script -q app-start.log "$RUNNER_TEMP/aTrain.app/Contents/MacOS/aTrain" > /dev/null 2>&1 &
           pid=$!
           status=0
-          sleep 60
+          for _ in $(seq "$STARTUP_TIMEOUT"); do
+            kill -0 "$pid" 2>/dev/null || break
+            grep -Eq "^aTrain startup ready|aTrain startup failed|Traceback \(most recent call last\):" app-start.log && break
+            sleep 1
+          done
+          # A crash right after "ready" still fails the check.
+          sleep 5
           if ! kill -0 "$pid" 2>/dev/null; then
             echo "::error::App exited during startup"
             status=1

@@ -40,7 +40,7 @@ def test_native_startup_requires_completed_initialization(tmp_path, job, log, ea
             '#!/bin/sh\nprintf "%s" "$SMOKE_LOG" > "$2"\n'
             '[ "$EARLY_EXIT" = false ] || exit 0\nexec /bin/sleep 10\n'
         ),
-        "sleep": "#!/bin/sh\nexec /bin/sleep 0.2\n",
+        "sleep": "#!/bin/sh\nexec /bin/sleep 0.05\n",
     }
     for name, body in stubs.items():
         path = bin_dir / name
@@ -55,6 +55,7 @@ def test_native_startup_requires_completed_initialization(tmp_path, job, log, ea
             "RUNNER_TEMP": str(tmp_path),
             "SMOKE_LOG": log,
             "EARLY_EXIT": str(early_exit).lower(),
+            "STARTUP_TIMEOUT": "20",
         },
         capture_output=True,
         text=True,
