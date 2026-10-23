@@ -21,6 +21,14 @@ Every release is a git tag `v<version>` and a GitHub release built from it by
 | `checksums-macos.txt` | GitHub release and Zenodo | SHA-256 of the DMG and its SBOM. |
 | `aTrain-<version>-macos.cdx.json` | GitHub release and Zenodo | CycloneDX SBOM of the macOS build. |
 
+Windows and macOS upload to the same unpublished Zenodo draft. The Windows
+upload passes its draft ID to the macOS job, including on the first release
+before `ZENODO_CONCEPT_ID` is configured. The macOS upload checks that the
+draft is still unpublished and matches the release version, keeps the Windows
+files, and replaces only its own files on retry. Tag runs are serialized, so
+two releases never write to the same draft. Publish the draft in Zenodo only
+after both platform uploads have succeeded.
+
 The `aTrain-macos-<version>` workflow artifact contains the same three macOS
 files.
 
