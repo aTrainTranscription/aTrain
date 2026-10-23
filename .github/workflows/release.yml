@@ -249,9 +249,10 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: aTrain-*-${{ needs.build-windows-msix.outputs.version }}${{ needs.build-windows-msix.outputs.suffix }}
+          # Match only the Windows artifact; a wildcard could also download the
+          # macOS DMG and bypass its separate validation and publishing jobs.
+          name: aTrain-msix-${{ needs.build-windows-msix.outputs.version }}${{ needs.build-windows-msix.outputs.suffix }}
           path: artifacts
-          merge-multiple: true
 
       - name: Add the source archive
         # Keeps the record self-contained: the exact sources the installers
@@ -334,9 +335,9 @@ jobs:
       - name: Keep the signed files as a workflow artifact
         # `publish-to-zenodo` downloads them from here, so a failed upload can
         # be re-run on its own without signing again. `overwrite` because a
-        # re-run of this job would otherwise fail on the existing name. Named
-        # `signed-aTrain-*`, outside the `aTrain-*-<version>` pattern the
-        # download step above uses, so a re-run never mixes it into `artifacts/`.
+        # re-run of this job would otherwise fail on the existing name. The
+        # download above selects only the unsigned MSIX build, so a re-run
+        # never mixes these signed files into `artifacts/`.
         uses: actions/upload-artifact@v7
         with:
           name: signed-aTrain-${{ needs.build-windows-msix.outputs.version }}${{ needs.build-windows-msix.outputs.suffix }}
