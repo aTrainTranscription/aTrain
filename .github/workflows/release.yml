@@ -26,6 +26,13 @@ on:
         type: boolean
         default: false
 
+# Both platform uploads mutate one shared Zenodo draft. Hold the lock for the
+# entire workflow, including the gap between Windows and macOS publication.
+# Tag dispatches share it too; ordinary branch test builds remain independent.
+concurrency:
+  group: ${{ startsWith(github.ref, 'refs/tags/v') && 'release-zenodo' || format('release-test-{0}', github.run_id) }}
+  cancel-in-progress: false
+
 permissions:
   contents: write  # required for `gh release create`
   actions: read    # SignPath reads the job and downloads the artifact via the API
@@ -353,6 +360,8 @@ jobs:
     # A job of its own (#305): a 3 GB upload to an external service can fail
     # (502s) and is re-run with "Re-run failed jobs" without signing again.
     needs: [build-windows-msix, sign-windows-msix]
+    outputs:
+      draft-id: ${{ steps.zenodo.outputs.draft-id }}
     # Slim builds only: the bundled variant is an internal build, not a
     # published release artifact.
     if: startsWith(github.ref, 'refs/tags/v') && !inputs.bundle_models
@@ -375,6 +384,7 @@ jobs:
           path: artifacts
 
       - name: Upload installers to Zenodo (draft)
+        id: zenodo
         # Zenodo is the download channel for the installers (#229). Creates a
         # DRAFT only - a maintainer publishes it in the Zenodo UI, which also
         # submits it to the community.
@@ -704,7 +714,7 @@ jobs:
       - name: Add the DMG to the Zenodo draft
         env:
           ZENODO_BASE: ${{ vars.ZENODO_BASE }}
-          ZENODO_CONCEPT_ID: ${{ vars.ZENODO_CONCEPT_ID }}
+          ZENODO_DRAFT_ID: ${{ needs.publish-to-zenodo.outputs.draft-id }}
           ZENODO_APPEND: "1"
         run: |
           if [[ -z "${ZENODO_TOKEN:-}" ]]; then
