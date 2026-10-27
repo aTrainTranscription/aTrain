@@ -27,7 +27,7 @@ dependencies = [
   # CTranslate2 extra (a incompatible fork of Ctranslate2 used by faster-whisper):
   "crisperwhisper[transformers]==2.0.3",
   "transformers==4.57.3",
-  "pandas==3.0.6",
+  "pandas==3.1.0",
   "pyannote.audio==4.0.7",
   "numpy==2.4.6",
   "werkzeug==3.1.9",
@@ -40,7 +40,7 @@ dependencies = [
   "torchaudio==2.9.1+cu128; sys_platform == 'win32'",
   "torchaudio==2.9.1; sys_platform != 'win32'",
   "typer==0.27.3",
-  "platformdirs==4.13.3",
+  "platformdirs==4.13.5",
   "jiwer==4.0.0",
 ]
 
