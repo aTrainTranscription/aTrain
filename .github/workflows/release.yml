@@ -7,7 +7,9 @@ name: Release
 # and stay available as workflow artifacts, since they exceed the 2 GiB
 # release-asset limit; the GitHub release carries the sha256 checksums
 # and the CycloneDX SBOM (#213) for verification. Flatpak (needs Flathub
-# manifest refresh) and macOS DMG are follow-ups.
+# manifest refresh) is a follow-up. An Apple silicon macOS DMG (not yet
+# signed or notarized) is added to the same Zenodo draft, its checksums and
+# SBOM to the release.
 
 on:
   push:
@@ -74,7 +76,7 @@ jobs:
           echo "Resolved version: $version"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -392,3 +394,322 @@ jobs:
           fi
           version="${{ needs.build-windows-msix.outputs.version }}"
           .github/scripts/zenodo-upload.sh "$version" artifacts/aTrain-* artifacts/checksums.txt
+
+  build-macos-dmg:
+    name: Build macOS DMG (unsigned, Apple silicon)
+    # macos-15 is arm64; macos-latest moves to a new macOS over time.
+    runs-on: macos-15
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      # Wheels are chosen for this macOS, not the runner's (orjson ships a
+      # macosx_15_0 wheel next to an 11.0 one). Matches LSMinimumSystemVersion.
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            # push events have no inputs
+            version="${{ inputs.test_version || '0.0.0-test' }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # macos_freeze.spec reads the version from the environment.
+          echo "ATRAIN_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Resolved version: $version"
+
+      - name: Set up Python
+        # The python.org framework build. Without it uv picks the runner's
+        # Homebrew Python, whose libraries require the runner's macOS version.
+        id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.2
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install the full app runtime
+        # --no-dev: see the Windows job. --python only here: the .venv it creates
+        # is then used by every later uv call (a job-wide UV_PYTHON would make
+        # `uv pip install` target the system Python instead).
+        shell: bash
+        run: |
+          uv sync --locked --extra gui --no-dev --python "${{ steps.python.outputs.python-path }}" \
+            --python-platform aarch64-apple-darwin
+
+      - name: Generate the SBOM
+        # #213, see the Windows job. Runs before PyInstaller is installed so
+        # the venv holds exactly the shipped runtime.
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          uvx --from "$CYCLONEDX_BOM" cyclonedx-py environment .venv \
+            --output-format JSON --output-file raw-sbom.json
+          uv run --no-project --with "$CYCLONEDX_LIB" \
+            python .github/scripts/build-sbom.py \
+              --input raw-sbom.json \
+              --output "aTrain-$version-macos.cdx.json" \
+              --version "$version" \
+              --platform macos \
+              --validate
+
+      - name: Install PyInstaller
+        shell: bash
+        run: uv pip install pyinstaller
+
+      - name: Build the frozen app with PyInstaller
+        # The log is kept (and uploaded even on failure) to debug missing
+        # imports and data files.
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync pyinstaller macos_freeze.spec --noconfirm 2>&1 | tee pyinstaller-macos.log
+
+      - name: Smoke test - architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          lipo -info dist/aTrain.app/Contents/MacOS/aTrain | tee lipo.txt
+          grep -q arm64 lipo.txt
+
+      - name: Smoke test - minimum macOS version
+        # The deployment target is the highest `minos` of any Mach-O file in
+        # the bundle (the bootloader alone says nothing about the bundled
+        # wheels). Wheels built for macOS 15 would not load on 14.
+        shell: bash
+        run: |
+          set -euo pipefail
+          limit=140000  # 14.0.0 as major*10000 + minor*100 + patch
+          find dist/aTrain.app -type f -print0 | xargs -0 file | grep 'Mach-O' | cut -d: -f1 > macho-files.txt
+          echo "Checking $(wc -l < macho-files.txt | tr -d ' ') Mach-O files"
+          : > minos.txt
+          while IFS= read -r f; do
+            otool -l "$f" 2>/dev/null | awk -v f="$f" '
+              /^ *cmd LC_BUILD_VERSION/ { want = "minos"; next }
+              /^ *cmd LC_VERSION_MIN_MACOSX/ { want = "version"; next }
+              want != "" && $1 == want {
+                n = split($2, v, ".")
+                printf "%d %s %s\n", v[1] * 10000 + v[2] * 100 + v[3], $2, f
+                want = ""
+              }' >> minos.txt
+          done < macho-files.txt
+          sort -n minos.txt | tail -n 5
+          highest="$(sort -n minos.txt | tail -n 1)"
+          if [[ -z "$highest" ]]; then
+            echo "::error::No minos found in any Mach-O file"
+            exit 1
+          fi
+          if (( ${highest%% *} > limit )); then
+            echo "::error::Bundle requires macOS newer than 14.0, offending files:"
+            awk -v limit="$limit" '$1 > limit' minos.txt
+            exit 1
+          fi
+
+      - name: Smoke test - code signature
+        # PyInstaller signs ad hoc on arm64; an unsigned arm64 binary will
+        # not launch.
+        shell: bash
+        run: codesign --verify --deep --strict --verbose=2 dist/aTrain.app
+
+      - name: Smoke test - the app starts
+        # Not --help: the frozen entry point ignores arguments and starts the GUI.
+        # `script` gives the app a pty, so its stdout is line-buffered (a frozen
+        # app ignores PYTHONUNBUFFERED) and the log is complete after 60 s.
+        shell: bash
+        run: |
+          set -euo pipefail
+          script -q app-start.log dist/aTrain.app/Contents/MacOS/aTrain > /dev/null 2>&1 &
+          pid=$!
+          status=0
+          sleep 60
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::App exited during startup"
+            status=1
+          elif ! grep -q "Running aTrain" app-start.log; then
+            echo "::error::App log lacks 'Running aTrain'"
+            status=1
+          fi
+          pkill -P "$pid" || true
+          kill "$pid" 2>/dev/null || true
+          echo "--- app-start.log ---"
+          cat app-start.log
+          exit "$status"
+
+      - name: Create the DMG
+        # The .app must not change after the ad-hoc signing; ditto preserves
+        # the bundle (symlinks, xattrs) as built.
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          dmg="aTrain-$version-macos-arm64.dmg"
+          staging="dmg-staging"
+          mkdir -p "$staging"
+          ditto dist/aTrain.app "$staging/aTrain.app"
+          ln -s /Applications "$staging/Applications"
+          # hdiutil is sometimes flaky on hosted runners: one retry.
+          hdiutil create -volname aTrain -srcfolder "$staging" -ov -format UDZO "$dmg" \
+            || { sleep 10; hdiutil create -volname aTrain -srcfolder "$staging" -ov -format UDZO "$dmg"; }
+          # Check that the app is inside.
+          mountpoint="$RUNNER_TEMP/dmg-mount"
+          mkdir -p "$mountpoint"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mountpoint"
+          status=0
+          [[ -d "$mountpoint/aTrain.app" ]] || { echo "::error::aTrain.app missing in DMG"; status=1; }
+          # The start test ran the app in place; check the copy that ships.
+          codesign --verify --deep --strict "$mountpoint/aTrain.app" || status=1
+          hdiutil detach "$mountpoint"
+          exit "$status"
+
+      - name: Compute checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          shasum -a 256 "aTrain-$version-macos-arm64.dmg" "aTrain-$version-macos.cdx.json" > checksums-macos.txt
+          cat checksums-macos.txt
+
+      - name: Upload the DMG, SBOM and checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: aTrain-macos-${{ steps.version.outputs.version }}
+          path: |
+            aTrain-*.dmg
+            aTrain-*.cdx.json
+            checksums-macos.txt
+          if-no-files-found: error
+          # A DMG is already compressed.
+          compression-level: 0
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: aTrain-macos-logs-${{ steps.version.outputs.version }}
+          path: |
+            pyinstaller-macos.log
+            build/macos_freeze/warn-macos_freeze.txt
+            app-start.log
+            minos.txt
+          if-no-files-found: ignore
+
+  macos27-app-start:
+    # The DMG built on macos-15 must also start on macOS 27.0.1, where 1.2.4
+    # fails to load scipy's PROPACK library.
+    name: macOS 27 - the app from the DMG starts
+    needs: build-macos-dmg
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Download the DMG
+        uses: actions/download-artifact@v8
+        with:
+          name: aTrain-macos-${{ needs.build-macos-dmg.outputs.version }}
+
+      - name: Copy the app out of the DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers
+          mountpoint="$RUNNER_TEMP/dmg-mount"
+          mkdir -p "$mountpoint"
+          hdiutil attach aTrain-*-macos-arm64.dmg -readonly -nobrowse -mountpoint "$mountpoint"
+          ditto "$mountpoint/aTrain.app" "$RUNNER_TEMP/aTrain.app"
+          hdiutil detach "$mountpoint"
+
+      - name: Smoke test - no scipy < 1.17.1
+        # scipy < 1.17.1 ships PROPACK as _propack/_?propack*.so, which the
+        # macOS 27.0.1 loader rejects.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find "$RUNNER_TEMP/aTrain.app" -type d -path '*/scipy/sparse/linalg/_propack' | grep -q .; then
+            echo "::error::Bundle contains scipy < 1.17.1 (scipy/sparse/linalg/_propack/)"
+            exit 1
+          fi
+
+      - name: Smoke test - the app starts
+        # Same check as in build-macos-dmg, on macOS 27.
+        shell: bash
+        run: |
+          set -euo pipefail
+          script -q app-start.log "$RUNNER_TEMP/aTrain.app/Contents/MacOS/aTrain" > /dev/null 2>&1 &
+          pid=$!
+          status=0
+          sleep 60
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::App exited during startup"
+            status=1
+          elif ! grep -q "Running aTrain" app-start.log; then
+            echo "::error::App log lacks 'Running aTrain'"
+            status=1
+          fi
+          pkill -P "$pid" || true
+          kill "$pid" 2>/dev/null || true
+          echo "--- app-start.log ---"
+          cat app-start.log
+          exit "$status"
+
+  publish-macos-to-zenodo:
+    name: Publish macOS DMG to Zenodo (draft)
+    # A job of its own like `publish-to-zenodo`, so a failed upload is re-run
+    # without rebuilding. After it, because the DMG goes into the draft that
+    # job creates (ZENODO_APPEND), and only once the DMG started on macOS 27.
+    needs: [build-macos-dmg, macos27-app-start, publish-to-zenodo]
+    if: startsWith(github.ref, 'refs/tags/v') && !inputs.bundle_models
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # See `publish-to-zenodo`.
+      ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download the DMG, SBOM and checksums
+        uses: actions/download-artifact@v8
+        with:
+          name: aTrain-macos-${{ needs.build-macos-dmg.outputs.version }}
+          path: artifacts
+
+      - name: Verify the checksums
+        # Covers the artifact round-trip; the DMG is not re-signed, so the
+        # build job's checksums still hold.
+        working-directory: artifacts
+        run: sha256sum -c checksums-macos.txt
+
+      - name: Attach checksums and SBOM to the GitHub release
+        # The release exists: `sign-windows-msix` creates it, see there.
+        working-directory: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "v${{ needs.build-macos-dmg.outputs.version }}" \
+            checksums-macos.txt aTrain-*.cdx.json --clobber
+
+      - name: Add the DMG to the Zenodo draft
+        env:
+          ZENODO_BASE: ${{ vars.ZENODO_BASE }}
+          ZENODO_CONCEPT_ID: ${{ vars.ZENODO_CONCEPT_ID }}
+          ZENODO_APPEND: "1"
+        run: |
+          if [[ -z "${ZENODO_TOKEN:-}" ]]; then
+            echo "::notice::No ZENODO_TOKEN configured - skipping the Zenodo upload."
+            exit 0
+          fi
+          .github/scripts/zenodo-upload.sh "${{ needs.build-macos-dmg.outputs.version }}" \
+            artifacts/aTrain-* artifacts/checksums-macos.txt

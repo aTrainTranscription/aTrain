@@ -23,6 +23,7 @@ FLATPAK = bool(os.environ.get("FLATPAK_ID"))
 # respects an explicitly-set env var if an operator wants metrics on.
 os.environ.setdefault("PYANNOTE_METRICS_ENABLED", "false")
 LINUX = platform.system().lower() == "linux"
+MACOS = platform.system().lower() == "darwin"
 # pyannote requires an explicit opt-in/out for telemetry metrics
 if FLATPAK:
     os.environ.setdefault("PYANNOTE_METRICS_ENABLED", "false")

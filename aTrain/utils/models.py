@@ -1,7 +1,5 @@
 import os
 import traceback
-import urllib.error
-import urllib.request
 from concurrent.futures.process import BrokenProcessPool
 from multiprocessing import Manager
 
@@ -10,6 +8,7 @@ from aTrain.components.dialogs.error import dialog_error
 from aTrain_core.globals import MODELS_DIR, REQUIRED_MODELS_DIR
 from aTrain_core.load_resources import get_model, load_model_config_file, remove_model
 from aTrain_core.settings import load_languages
+from huggingface_hub.utils import get_session
 from nicegui import run, ui
 from nicegui.run import SubprocessException
 from nicegui.run import setup as setup_process_pool
@@ -116,8 +115,8 @@ async def download_model(model: str):
 def check_internet() -> None:
     """A function to check whether the user is connected to the internet."""
     try:
-        urllib.request.urlopen("https://huggingface.co", timeout=10)  # nosec B310 — hardcoded https URL, not user input
-    except urllib.error.URLError:
+        get_session().head("https://huggingface.co", timeout=10)
+    except Exception as e:
         raise ConnectionError(
-            "We cannot reach Hugging Face. Most likely you are not connected to the internet."
+            f"We cannot reach Hugging Face ({e}). Most likely you are not connected to the internet."
         )

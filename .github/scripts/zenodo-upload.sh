@@ -7,11 +7,10 @@
 # Usage:
 #   zenodo-upload.sh <version> <file>...
 #
-# One invocation per release: it clears the draft's files before uploading,
-# so a second invocation for the same version would remove what the first one
-# uploaded. Once more artifact types exist (EXE #221, Flatpak), collect them
-# in a single publish job and pass them all to one invocation, rather than
-# calling this once per build job.
+# The first invocation per release clears the draft's files before uploading,
+# so a second plain invocation for the same version would remove what the
+# first one uploaded. Further platforms (macOS) are added to the same draft
+# with ZENODO_APPEND=1, which only replaces files of the same name.
 #
 # Environment:
 #   ZENODO_TOKEN        (required) personal access token, scope deposit:write
@@ -21,6 +20,9 @@
 #                       the upload is added as a new version of it, otherwise a
 #                       new concept is started
 #   ZENODO_METADATA     (optional) metadata file, defaults to .zenodo.json
+#   ZENODO_APPEND       (optional) 1 = add the files to the unpublished draft
+#                       of <version> instead of starting one; fails if there
+#                       is none. Requires ZENODO_CONCEPT_ID
 #
 # Example (rehearse against the sandbox):
 #   ZENODO_TOKEN=... ZENODO_BASE=https://sandbox.zenodo.org \
@@ -41,6 +43,8 @@ Environment:
   GITHUB_REPOSITORY  (required) owner/name, for the release back-link
   ZENODO_CONCEPT_ID  (optional) concept id; when set, adds a new version to it
   ZENODO_METADATA    (optional) metadata file, default .zenodo.json
+  ZENODO_APPEND      (optional) 1 = add the files to the existing draft of
+                     <version>, keeping its other files
 USAGE
 }
 
@@ -57,6 +61,10 @@ for var in ZENODO_TOKEN ZENODO_BASE GITHUB_REPOSITORY; do
     exit 2
   fi
 done
+if [[ "${ZENODO_APPEND:-}" == 1 && -z "${ZENODO_CONCEPT_ID:-}" ]]; then
+  echo "error: ZENODO_APPEND=1 needs ZENODO_CONCEPT_ID to find the draft" >&2
+  exit 2
+fi
 [[ -f "$metadata_file" ]] || { echo "error: $metadata_file not found" >&2; exit 2; }
 for file in "${files[@]}"; do
   [[ -f "$file" ]] || { echo "error: $file not found" >&2; exit 2; }
@@ -82,7 +90,17 @@ if [[ -n "${ZENODO_CONCEPT_ID:-}" ]]; then
   # already published record, whose files cannot be deleted (403).
   pending="$(api GET "/deposit/depositions?q=conceptrecid:$ZENODO_CONCEPT_ID&status=draft" \
     | jqr '[.[] | select(.submitted == false)][0].id // empty')"
-  if [[ -n "$pending" ]]; then
+  if [[ "${ZENODO_APPEND:-}" == 1 ]]; then
+    # Only the draft the first upload of this release made: appending to
+    # anything else would mix two versions in one record.
+    deposition=""
+    [[ -n "$pending" ]] && deposition="$(api GET "/deposit/depositions/$pending")"
+    if [[ -z "$deposition" || "$(jqr '.metadata.version // empty' <<<"$deposition")" != "$version" ]]; then
+      echo "::error::No unpublished Zenodo draft for $version to append to."
+      exit 1
+    fi
+    echo "appending to Zenodo draft $pending"
+  elif [[ -n "$pending" ]]; then
     echo "::warning::Zenodo draft $pending was still unpublished - reusing it for $version."
     deposition="$(api GET "/deposit/depositions/$pending")"
   else
@@ -110,8 +128,11 @@ fi
 id="$(jqr .id <<<"$deposition")"
 bucket="$(jqr .links.bucket <<<"$deposition")"
 
-# Drafts carry the previous version's files.
-for file_id in $(jqr '.files[]?.id' <<<"$deposition"); do
+# Drafts carry the previous version's files. In append mode only same-named
+# files go, so a re-run replaces its own uploads and keeps the other platforms'.
+names="$(printf '%s\n' "${files[@]##*/}" | jq -R . | jq -s .)"
+for file_id in $(jqr --argjson names "$names" --arg append "${ZENODO_APPEND:-}" \
+    '.files[]? | select($append != "1" or (.filename | IN($names[]))) | .id' <<<"$deposition"); do
   api DELETE "/deposit/depositions/$id/files/$file_id" -o /dev/null
 done
 

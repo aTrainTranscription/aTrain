@@ -17,6 +17,12 @@ Every release is a git tag `v<version>` and a GitHub release built from it by
 | `checksums.txt` | GitHub release and Zenodo | SHA-256 of every file below, computed after signing. Both copies are identical. |
 | `aTrain-<version>-windows.cdx.json` | GitHub release | CycloneDX SBOM of the Windows build. |
 | `aTrain-<version>-source.tar.gz` | GitHub (tag archive) | Source at the tag; its hash is in `checksums.txt`. |
+| `aTrain-<version>-macos-arm64.dmg` | Zenodo | macOS disk image, Apple silicon, unsigned and not notarized. |
+| `checksums-macos.txt` | GitHub release and Zenodo | SHA-256 of the DMG and its SBOM. |
+| `aTrain-<version>-macos.cdx.json` | GitHub release and Zenodo | CycloneDX SBOM of the macOS build. |
+
+The `aTrain-macos-<version>` workflow artifact contains the same three macOS
+files.
 
 Under Actions, the `aTrain-msix-<version>` workflow artifact contains the
 unsigned build; its installer hash does not match the release's `checksums.txt`.
@@ -45,6 +51,17 @@ Linux/macOS:
 ```bash
 sha256sum -c checksums.txt --ignore-missing
 ```
+
+macOS (Apple silicon DMG): compare the hash of the disk image with the
+matching line in `checksums-macos.txt` from the GitHub release:
+
+```bash
+shasum -a 256 aTrain-<version>-macos-arm64.dmg
+```
+
+The macOS build is unsigned for now, so there is no signature to verify, and
+Gatekeeper blocks the first launch. Only after the checksum matches, open it
+through System Settings → Privacy & Security → Open Anyway.
 
 A mismatch means a corrupted download or a file that is not the released one.
 Do not install it; download again, then report if it persists (see below).

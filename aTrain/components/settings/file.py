@@ -1,6 +1,6 @@
 import os
 
-from aTrain_core.globals import FLATPAK, LINUX
+from aTrain_core.globals import FLATPAK, LINUX, MACOS
 from aTrain_core.settings import load_formats
 from nicegui import app, ui
 
@@ -41,7 +41,7 @@ def input_file() -> CustomUpload:
             select_button.props("unelevated no-caps :ripple=false")
             select_button.classes("w-full h-full")
 
-    if not (FLATPAK or LINUX) or app.native.main_window is None:
+    if not (FLATPAK or LINUX or MACOS) or app.native.main_window is None:
         select_button.bind_text(uploader, "file_text")
         select_button.bind_icon(uploader, "file_icon")
         select_button.on_click(uploader.pick_files)
@@ -120,8 +120,14 @@ def input_file() -> CustomUpload:
             print(f"Flatpak portal file dialog failed: {exc}")
             return None
 
-    def on_pick():
-        path = pick_file_native()
+    async def on_pick():
+        if MACOS:
+            # The web page's file dialog does not open in pywebview's macOS
+            # window (#307); pywebview's own dialog does.
+            paths = await app.native.main_window.create_file_dialog()
+            path = paths[0] if paths else None
+        else:
+            path = pick_file_native()
         if not path:
             return
         uploader.selected_path = path
