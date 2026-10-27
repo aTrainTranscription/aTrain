@@ -296,6 +296,194 @@ jobs:
         # tests/e2e_browser/conftest.py for the fixture.
         run: uv run --no-sync pytest tests/e2e_browser -v
 
+  macos-app-start:
+    name: macOS startup (macOS 15)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      # Match the release build, without signing secrets or notarization.
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      ATRAIN_VERSION: "0.0.0-ci"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        # The python.org framework build. Without it uv picks the runner's
+        # Homebrew Python, whose libraries require the runner's macOS version.
+        id: python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install the full app runtime
+        # --no-dev matches the release runtime. --python only here: the .venv it creates
+        # is then used by every later uv call (a job-wide UV_PYTHON would make
+        # `uv pip install` target the system Python instead).
+        shell: bash
+        run: |
+          uv sync --locked --extra gui --no-dev --python "${{ steps.python.outputs.python-path }}" \
+            --python-platform aarch64-apple-darwin
+
+      - name: Install PyInstaller
+        shell: bash
+        run: uv pip install pyinstaller
+
+      - name: Build the frozen app with PyInstaller
+        # The log is kept (and uploaded even on failure) to debug missing
+        # imports and data files.
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --no-sync pyinstaller macos_freeze.spec --noconfirm 2>&1 | tee pyinstaller-macos.log
+
+      - name: Smoke test - the app starts
+        # Not --help: the frozen entry point ignores arguments and starts the GUI.
+        # `script` gives the app a pty, so its stdout is line-buffered (a frozen
+        # app ignores PYTHONUNBUFFERED). Wait for the frontend to connect, the
+        # deferred runtime imports to finish, and the root page to be built.
+        # Polls: a first launch on a fresh runner can take over a minute.
+        env:
+          ATRAIN_USER_DIR: ${{ runner.temp }}/atrain-startup
+          STARTUP_TIMEOUT: "300"
+        shell: bash
+        run: |
+          set -euo pipefail
+          script -q app-start.log dist/aTrain.app/Contents/MacOS/aTrain > /dev/null 2>&1 &
+          pid=$!
+          status=0
+          for _ in $(seq "$STARTUP_TIMEOUT"); do
+            kill -0 "$pid" 2>/dev/null || break
+            grep -Eq "^aTrain startup ready|aTrain startup failed|Traceback \(most recent call last\):" app-start.log && break
+            sleep 1
+          done
+          # A crash right after "ready" still fails the check.
+          sleep 5
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::App exited during startup"
+            status=1
+          elif grep -Eq "aTrain startup failed|Traceback \(most recent call last\):" app-start.log; then
+            echo "::error::App initialization failed"
+            status=1
+          elif ! grep -q "^aTrain startup ready" app-start.log; then
+            echo "::error::App did not finish initializing the main page"
+            status=1
+          fi
+          pkill -P "$pid" || true
+          kill "$pid" 2>/dev/null || true
+          echo "--- app-start.log ---"
+          cat app-start.log
+          exit "$status"
+
+      - name: Archive the app for the macOS 27 check
+        # Zip with ditto so the bundle's symlinks and permissions survive upload.
+        shell: bash
+        run: ditto -c -k --keepParent dist/aTrain.app aTrain-macos-test.zip
+
+      - name: Upload the test app
+        uses: actions/upload-artifact@v7
+        with:
+          name: aTrain-macos-test
+          path: aTrain-macos-test.zip
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload startup and build logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos15-startup-logs
+          path: |
+            pyinstaller-macos.log
+            build/macos_freeze/warn-macos_freeze.txt
+            app-start.log
+          if-no-files-found: ignore
+
+  macos27-app-start:
+    # Check the same app built on macOS 15 against the newer loader.
+    name: macOS startup (macOS 27)
+    needs: macos-app-start
+    runs-on: xcode-27
+    timeout-minutes: 20
+
+    steps:
+      - name: Download the test app
+        uses: actions/download-artifact@v8
+        with:
+          name: aTrain-macos-test
+
+      - name: Extract the app
+        shell: bash
+        run: |
+          sw_vers
+          ditto -x -k aTrain-macos-test.zip "$RUNNER_TEMP"
+
+      - name: Smoke test - no scipy < 1.17.1
+        # scipy < 1.17.1 ships PROPACK as _propack/_?propack*.so, which the
+        # macOS 27.0.1 loader rejects.
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find "$RUNNER_TEMP/aTrain.app" -type d -path '*/scipy/sparse/linalg/_propack' | grep -q .; then
+            echo "::error::Bundle contains scipy < 1.17.1 (scipy/sparse/linalg/_propack/)"
+            exit 1
+          fi
+
+      - name: Smoke test - the app starts
+        # Not --help: the frozen entry point ignores arguments and starts the GUI.
+        # `script` gives the app a pty, so its stdout is line-buffered (a frozen
+        # app ignores PYTHONUNBUFFERED). Wait for the frontend to connect, the
+        # deferred runtime imports to finish, and the root page to be built.
+        # Polls: a first launch on a fresh runner can take over a minute.
+        env:
+          ATRAIN_USER_DIR: ${{ runner.temp }}/atrain-startup
+          STARTUP_TIMEOUT: "300"
+        shell: bash
+        run: |
+          set -euo pipefail
+          script -q app-start.log "$RUNNER_TEMP/aTrain.app/Contents/MacOS/aTrain" > /dev/null 2>&1 &
+          pid=$!
+          status=0
+          for _ in $(seq "$STARTUP_TIMEOUT"); do
+            kill -0 "$pid" 2>/dev/null || break
+            grep -Eq "^aTrain startup ready|aTrain startup failed|Traceback \(most recent call last\):" app-start.log && break
+            sleep 1
+          done
+          # A crash right after "ready" still fails the check.
+          sleep 5
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::App exited during startup"
+            status=1
+          elif grep -Eq "aTrain startup failed|Traceback \(most recent call last\):" app-start.log; then
+            echo "::error::App initialization failed"
+            status=1
+          elif ! grep -q "^aTrain startup ready" app-start.log; then
+            echo "::error::App did not finish initializing the main page"
+            status=1
+          fi
+          pkill -P "$pid" || true
+          kill "$pid" 2>/dev/null || true
+          echo "--- app-start.log ---"
+          cat app-start.log
+          exit "$status"
+
+      - name: Upload startup log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos27-startup-logs
+          path: app-start.log
+          if-no-files-found: ignore
+
   unit:
     name: unit (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
