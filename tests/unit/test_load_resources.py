@@ -75,3 +75,43 @@ def test_hub_download_functions_accept_the_progress_bar(name):
     # download_model passes `_tqdm_bar` to both; a Hub upgrade that drops it
     # would only fail at download time.
     assert "_tqdm_bar" in inspect.signature(getattr(file_download, name)).parameters
+
+
+def _certificate_error():
+    """The shape of the chain requests raises when a proxy re-signs TLS.
+
+    requests.SSLError has MaxRetryError as its context, whose `reason` is a
+    urllib3 SSLError that holds the ssl error in `args` instead of chaining
+    it. Built from stdlib exceptions, since the unit job installs neither
+    requests nor urllib3.
+    """
+    import ssl
+
+    urllib3_error = OSError(ssl.SSLCertVerificationError(1, "unable to get local issuer"))
+    max_retry = OSError("Max retries exceeded")
+    max_retry.reason = urllib3_error
+    requests_error = OSError(max_retry)
+    requests_error.__context__ = max_retry
+    return requests_error
+
+
+def test_certificate_error_points_to_manual_install(tmp_path, monkeypatch):
+    original = file_download.http_get
+
+    def fail(**kw):
+        raise _certificate_error()
+
+    monkeypatch.setattr(load_resources, "snapshot_download", fail)
+
+    with pytest.raises(load_resources.ModelDownloadError) as caught:
+        load_resources.download_model(
+            tmp_path / "large-v3-turbo", MODEL_INFO, progress={"current": 0, "total": 0}
+        )
+
+    assert "'large-v3-turbo'" in str(caught.value)
+    assert load_resources.OFFLINE_INSTALL_DOCS in str(caught.value)
+    assert file_download.http_get is original
+
+
+def test_other_errors_are_not_reported_as_certificate_errors():
+    assert not load_resources._is_certificate_error(OSError("connection lost"))
