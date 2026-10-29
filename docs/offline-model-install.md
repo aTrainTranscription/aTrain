@@ -38,6 +38,8 @@ subfolders.
 
 ```powershell
 $ProgressPreference = 'SilentlyContinue'
+# Use the Windows login for proxies that ask for it
+[System.Net.WebRequest]::DefaultWebProxy.Credentials = [System.Net.CredentialCache]::DefaultNetworkCredentials
 $base = if ($env:ATRAIN_USER_DIR) { $env:ATRAIN_USER_DIR } else { Join-Path ([Environment]::GetFolderPath('MyDocuments')) "aTrain" }
 $target = Join-Path $base "models"
 $models = @{
@@ -58,7 +60,7 @@ foreach ($name in $models.Keys) {
     $path = Join-Path $target "$name\$($file -replace '/', '\')"
     New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
     Write-Host "Downloading $name/$file"
-    Invoke-WebRequest -Uri "https://huggingface.co/$($m.repo)/resolve/$($m.rev)/$file" -OutFile $path -ProxyUseDefaultCredentials
+    Invoke-WebRequest -Uri "https://huggingface.co/$($m.repo)/resolve/$($m.rev)/$file" -OutFile $path
   }
 }
 Write-Host "Done. Models are in $target"
