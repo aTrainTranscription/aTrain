@@ -56,7 +56,6 @@ def _append_word_text(text: str, word: str) -> str:
 
 
 SENTENCE_END = (".", "?", "!", "…", "。", "？", "！")  # noqa: RUF001
-SRT_MAX_DURATION = 7.0
 _CLOSERS = "\"'”’»)]」』"  # noqa: RUF001
 
 
