@@ -62,7 +62,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           # New uv.lock invalidates the cache automatically.
@@ -89,7 +89,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -149,7 +149,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -190,7 +190,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -212,6 +212,43 @@ jobs:
       - name: Run transcription E2E smoke test
         run: .venv/bin/python -m pytest tests/core -v
 
+  e2e-crisper:
+    name: e2e (CrisperWhisper word timestamps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ATRAIN_TEST_CRISPER: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install aTrain engine deps (CPU torch) + pytest
+        # Constrain every dependency to uv.lock so CI tests the shipped versions.
+        # The locked Linux pin torch==2.9.1 also admits the +cpu build.
+        run: |
+          uv venv
+          uv export --locked --no-emit-project --no-hashes --no-dev \
+            --output-file "$RUNNER_TEMP/constraints.txt" > /dev/null
+          uv pip install \
+            . \
+            "torch==2.9.1+cpu" "torchaudio==2.9.1+cpu" pytest pytest-asyncio \
+            --constraint "$RUNNER_TEMP/constraints.txt" \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Check real CrisperWhisper transcription and attention outputs
+        env:
+          ATRAIN_USER_DIR: ${{ runner.temp }}/atrain-crisper
+          HF_HOME: ${{ runner.temp }}/crisper-hf
+        run: .venv/bin/python -m pytest tests/core/test_crisper_transformers_e2e.py -v
+
   e2e-app:
     name: e2e (app, full stack)
     needs: changes
@@ -231,7 +268,7 @@ jobs:
           sudo apt-get install -y libcairo2-dev libgirepository1.0-dev
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -274,7 +311,7 @@ jobs:
           sudo apt-get install -y libcairo2-dev libgirepository1.0-dev
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -310,7 +347,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -329,7 +366,12 @@ jobs:
         run: |
           uv venv
           uv pip install --no-deps .
-          uv pip install platformdirs pyyaml show-in-file-manager huggingface_hub pytest
+          # Exercise the shipped Hub API rather than whatever major version is
+          # latest on PyPI; constraints keep this install free of torch/GTK.
+          uv export --locked --no-emit-project --no-hashes --no-dev --extra gui \
+            --output-file "$RUNNER_TEMP/unit-constraints.txt" > /dev/null
+          uv pip install --constraint "$RUNNER_TEMP/unit-constraints.txt" \
+            platformdirs pyyaml show-in-file-manager huggingface_hub pytest
 
       - name: Run unit tests
         # `uv run --no-sync` finds the venv we just built and invokes python

@@ -48,6 +48,13 @@ def _segment(words, **extra):
     }
 
 
+def _spoken(text, start):
+    """Builds Whisper-style words for text, one every half second from start."""
+    return _words(
+        *[(start + i * 0.5, start + i * 0.5 + 0.4, f" {w}") for i, w in enumerate(text.split())]
+    )
+
+
 @pytest.mark.parametrize("movie", MOVIES)
 def test_movie_clips_follow_netflix_rules(movie):
     fixture = json.loads((FIXTURES / f"{movie}.json").read_text(encoding="utf-8"))
@@ -288,6 +295,28 @@ def test_long_pause_after_a_comma_starts_a_new_cue():
     cues = srt_cues([wait, okay], "en")
     assert [cue[2] for cue in cues] == ["Wait,", "okay."]
     assert cues[0][1] < 6.0
+
+
+@pytest.mark.parametrize("language", ["de", "nn"])
+def test_ordinal_number_does_not_end_a_sentence(language):
+    words = _spoken("Erstausstrahlung am 2. September 2012 im ZDF.", 0.0)
+    assert [cue[2] for cue in srt_cues([_segment(words)], language)] == [
+        "Erstausstrahlung am 2. September 2012 im ZDF."
+    ]
+
+
+@pytest.mark.parametrize(
+    ("language", "first", "second", "pause"),
+    [
+        ("de", "Das war im Jahr 2012.", "Danach kam nichts mehr.", 0.2),  # a year, not an ordinal
+        ("de", "Das war die Folge 49.", "Danach kam nichts mehr.", 1.4),  # long pause
+        ("en", "We read chapter 2.", "Then we stopped.", 0.2),  # no such ordinals in English
+    ],
+)
+def test_number_with_a_period_ends_a_sentence(language, first, second, pause):
+    words = _spoken(first, 0.0)
+    words += _spoken(second, words[-1]["end"] + pause)
+    assert [cue[2] for cue in srt_cues([_segment(words)], language)] == [first, second]
 
 
 def test_sentence_kept_as_one_word_is_split_like_other_text():

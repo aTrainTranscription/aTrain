@@ -124,27 +124,49 @@ Get-ChildItem (Join-Path ([Environment]::GetFolderPath('MyDocuments')) "aTrain\m
   Format-Table Length, FullName -AutoSize
 ```
 
-To compare checksums, run `Get-FileHash` on a file and look up its expected
-SHA-256 in `models.json`.
+Then check the checksums. This step is required: aTrain verifies only the
+models it downloads itself, never files copied in by hand. The snippet reads
+the expected SHA-256 values from `models.json` of your aTrain version (replace
+the tag) and prints every file that is missing or does not match:
+
+```powershell
+$models = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "aTrain\models"
+$manifest = Invoke-RestMethod "https://raw.githubusercontent.com/aTrainTranscription/aTrain/v1.5.0-rc5/aTrain_core/data/models.json"
+foreach ($name in "large-v3-turbo", "speaker-detection") {
+  foreach ($f in $manifest.$name.files.PSObject.Properties) {
+    $path = Join-Path $models "$name\$($f.Name -replace '/', '\')"
+    $expected = $f.Value -replace '^sha256:', ''
+    if (-not (Test-Path -LiteralPath $path)) { "MISSING  $name/$($f.Name)" }
+    elseif ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $expected) { "WRONG    $name/$($f.Name)" }
+  }
+}
+```
+
+No output means all files are complete and match. Without access to GitHub,
+copy `models.json` from another machine and set
+`$manifest = Get-Content .\models.json -Raw | ConvertFrom-Json` instead.
 
 Then restart aTrain. With all files in place, aTrain does not contact Hugging
 Face for these models.
 
+**Models page:** it lists a hand-installed `speaker-detection` as not
+downloaded and offers "Download". Without access to Hugging Face, do not click
+it: the failed download can delete the folder.
+
 ## What aTrain does with incomplete folders
 
-aTrain checks every model folder against the file list and checksums in
-`models.json` before it uses the model:
+Before it uses a model, aTrain only checks that every file listed in
+`models.json` exists. If one is missing (for example `gitattributes` without
+the dot), it tries to download the model again. Without access to Hugging Face
+that fails, and what happens to the folder depends on the version:
 
-- **A file is missing** (for example `gitattributes` without the dot): aTrain
-  tries to download the model again. Without access to Hugging Face this fails
-  with a network or certificate error.
-- **The download is not possible and the folder is checked as it is** (for
-  example with `HF_HUB_OFFLINE=1`): aTrain reports
-  `Model '...' does not match its checksums and will be removed` and **deletes
-  the model folder**. Put the files in place again before the next attempt.
+| Version | Certificate error | Hugging Face unreachable, or `HF_HUB_OFFLINE=1` |
+| --- | --- | --- |
+| up to 1.5.0-rc5 | error, folder kept | `Model '...' does not match its checksums and will be removed`, **folder deleted** |
+| later versions | error, folder kept | error, folder kept |
 
-`HF_HUB_OFFLINE` does not help with manually installed models. It only changes
-which of the two errors you see.
+Put the missing files in place before the next attempt. `HF_HUB_OFFLINE` does
+not help with manually installed models.
 
 ## Proxies that inspect TLS
 
@@ -174,8 +196,10 @@ Add-Content $bundle ([Convert]::ToBase64String($ca.RawData, 'InsertLineBreaks'))
 Add-Content $bundle "-----END CERTIFICATE-----"
 
 [Environment]::SetEnvironmentVariable("REQUESTS_CA_BUNDLE", $bundle, "User")
+[Environment]::SetEnvironmentVariable("SSL_CERT_FILE", $bundle, "User")
 ```
 
-Sign out of Windows and back in, so that aTrain picks up the variable. The
-bundle has to contain the public CAs too: the variable replaces aTrain's CA
-list instead of adding to it.
+Versions up to 1.5.0-rc5 read `REQUESTS_CA_BUNDLE`, later ones read
+`SSL_CERT_FILE`; setting both covers all versions. Sign out of Windows and back
+in, so that aTrain picks up the variables. The bundle has to contain the public
+CAs too: the variables replace aTrain's CA list instead of adding to it.
