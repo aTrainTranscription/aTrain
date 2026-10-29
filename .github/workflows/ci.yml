@@ -371,7 +371,7 @@ jobs:
           uv export --locked --no-emit-project --no-hashes --no-dev --extra gui \
             --output-file "$RUNNER_TEMP/unit-constraints.txt" > /dev/null
           uv pip install --constraint "$RUNNER_TEMP/unit-constraints.txt" \
-            platformdirs pyyaml show-in-file-manager huggingface_hub pytest
+            platformdirs truststore pyyaml show-in-file-manager huggingface_hub pytest
 
       - name: Run unit tests
         # `uv run --no-sync` finds the venv we just built and invokes python

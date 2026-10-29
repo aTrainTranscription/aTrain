@@ -43,6 +43,9 @@ dependencies = [
   "typer==0.27.3",
   "platformdirs==4.13.5",
   "jiwer==4.0.0",
+  # Verify TLS against the OS trust store, so downloads work behind proxies
+  # that re-sign traffic with a CA the OS trusts but certifi does not.
+  "truststore==0.10.4",
 ]
 
 [project.optional-dependencies]
