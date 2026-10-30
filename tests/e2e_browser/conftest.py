@@ -1,11 +1,12 @@
 """Fixtures for real-browser e2e tests driven by Playwright.
 
-`atrain_server` starts `aTrain start --no-native` as a subprocess for the whole
-test session, polls until it serves HTTP 200 on http://127.0.0.1:8080, and
-yields that URL. Terminated on teardown.
+`atrain_server` starts `aTrain start --no-native --host 127.0.0.1` as a
+subprocess for the whole test session, polls until it serves HTTP 200 on
+http://127.0.0.1:8080, and yields that URL. Terminated on teardown.
 
 Individual tests receive Playwright's own `page` / `browser` fixtures from
 pytest-playwright and drive real Chromium against the running server.
+`test_host_check.py` only uses the server and sends plain HTTP requests.
 
 Kept in its own directory so `tests/ui/conftest.py`'s
 `pytest_plugins = ["nicegui.testing.user_plugin"]` does not apply here - the
@@ -34,8 +35,9 @@ def atrain_server() -> Generator[str, None, None]:
     # The subprocess must not look like it runs inside pytest: nicegui>=3's
     # ui.run sees PYTEST_CURRENT_TEST and then requires the screen-test port.
     env.pop("PYTEST_CURRENT_TEST", None)
+    # Bound to loopback like the installed apps, so the host check (#300) is on.
     proc = subprocess.Popen(
-        ["aTrain", "start", "--no-native"],
+        ["aTrain", "start", "--no-native", "--host", "127.0.0.1"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

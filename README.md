@@ -120,6 +120,7 @@ deployments:
 | `--no-show` | Do not automatically open a browser tab. |
 | `--host HOST` | Bind to a specific IP address. |
 | `--port PORT` | Listen on a specific port. |
+| `--allow-any-host` | Turn off the host and origin check, needed behind a reverse proxy on the same machine when binding to `127.0.0.1` or `localhost`. |
 
 For example, to run a server on port 8080 without opening a browser tab:
 
