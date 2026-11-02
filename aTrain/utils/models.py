@@ -6,6 +6,7 @@ from multiprocessing import Manager
 from aTrain.components.dialogs.download import close_dialog_download, dialog_download
 from aTrain.components.dialogs.error import dialog_error
 from aTrain_core.globals import MODELS_DIR, REQUIRED_MODELS_DIR
+from aTrain_core.integrity import find_missing_files
 from aTrain_core.load_resources import get_model, load_model_config_file, remove_model
 from aTrain_core.settings import load_languages
 from huggingface_hub.utils import get_session
@@ -29,27 +30,25 @@ def read_downloaded_models() -> list:
         all_file_directories.sort(reverse=True)
 
         for directory_name in all_file_directories:
-            directory_path = os.path.join(directory, directory_name)
-            for file in os.listdir(directory_path):
-                if file.endswith(".bin") and directory_name in list(models_config.keys()):
-                    all_downloaded_models.append(directory_name)
-                    break
-                if (
-                    file == "model.safetensors"
-                    and models_config.get(directory_name, {}).get("backend")
-                    == "crisper-transformers"
-                ):
-                    all_downloaded_models.append(directory_name)
-                    break
+            # Downloaded means every file the models.json manifest lists for this
+            # model exists, including those in subfolders (speaker-detection).
+            # get_model() runs the same check before every use.
+            manifest = models_config.get(directory_name, {}).get("files")
+            if manifest and not find_missing_files(directory / directory_name, manifest):
+                all_downloaded_models.append(directory_name)
 
     return all_downloaded_models
 
 
 def read_transcription_models() -> list:
-    all_models = read_downloaded_models()
-    while "diarize" in all_models:
-        all_models.remove("diarize")
-    return all_models
+    # Models of the pyannote backend (speaker-detection) are listed on the Models
+    # page but cannot transcribe.
+    models_config = load_model_config_file()
+    return [
+        model
+        for model in read_downloaded_models()
+        if models_config[model].get("backend") != "pyannote"
+    ]
 
 
 def read_model_metadata() -> list:
@@ -86,6 +85,10 @@ def model_languages(model: str) -> dict:
 
 
 async def download_model(model: str):
+    # On failure, remove only a folder this download created and leave one that
+    # was there before, such as a model copied by hand (#334). get_model() itself
+    # discards a folder that fails its checksums after a download.
+    existed = (MODELS_DIR / model).exists()
     with Manager() as manager:
         progress = manager.dict({"current": 0, "total": 999999})
         dialog_download(progress, model)
@@ -96,18 +99,21 @@ async def download_model(model: str):
             ui.navigate.reload()
 
         except BrokenProcessPool:
-            remove_model(model)
+            if not existed:
+                remove_model(model)
             setup_process_pool()
             close_dialog_download()
             ui.navigate.reload()
 
         except SubprocessException as e:
-            remove_model(model)
+            if not existed:
+                remove_model(model)
             close_dialog_download()
             dialog_error(error=e.original_message, traceback=e.original_traceback)
 
         except Exception as e:
-            remove_model(model)
+            if not existed:
+                remove_model(model)
             close_dialog_download()
             dialog_error(str(e), traceback.format_exc())
 
