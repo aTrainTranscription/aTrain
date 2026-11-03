@@ -17,7 +17,7 @@ Every release is a git tag `v<version>` and a GitHub release built from it by
 | `checksums.txt` | GitHub release and Zenodo | SHA-256 of every file below, computed after signing. Both copies are identical. |
 | `aTrain-<version>-windows.cdx.json` | GitHub release | CycloneDX SBOM of the Windows build. |
 | `aTrain-<version>-source.tar.gz` | GitHub (tag archive) | Source at the tag; its hash is in `checksums.txt`. |
-| `aTrain-<version>-macos-arm64.dmg` | Zenodo | macOS disk image, Apple silicon, unsigned and not notarized. |
+| `aTrain-<version>-macos-arm64.dmg` | Zenodo | macOS disk image, Apple silicon, signed with a Developer ID and notarized by Apple. |
 | `checksums-macos.txt` | GitHub release and Zenodo | SHA-256 of the DMG and its SBOM. |
 | `aTrain-<version>-macos.cdx.json` | GitHub release and Zenodo | CycloneDX SBOM of the macOS build. |
 
@@ -59,10 +59,6 @@ matching line in `checksums-macos.txt` from the GitHub release:
 shasum -a 256 aTrain-<version>-macos-arm64.dmg
 ```
 
-The macOS build is unsigned for now, so there is no signature to verify, and
-Gatekeeper blocks the first launch. Only after the checksum matches, open it
-through System Settings → Privacy & Security → Open Anyway.
-
 A mismatch means a corrupted download or a file that is not the released one.
 Do not install it; download again, then report if it persists (see below).
 
@@ -77,7 +73,24 @@ Get-AuthenticodeSignature .\aTrain-<version>.msix | Format-List Status, SignerCe
 applied through SignPath.io. The policy page also lists who may approve a
 signing request.
 
-## 3. Verify the source
+## 3. Check the Developer ID signature (macOS app)
+
+Open the DMG, then check the app on the mounted volume:
+
+```bash
+codesign --verify --deep --strict --verbose=2 /Volumes/aTrain/aTrain.app
+codesign -dv --verbose=4 /Volumes/aTrain/aTrain.app 2>&1 | grep -E '^(Authority|TeamIdentifier)='
+spctl -a -vvv -t exec /Volumes/aTrain/aTrain.app
+```
+
+`codesign --verify` must pass. The first `Authority` must be the Developer ID
+named in the [Code signing policy](code-signing-policy.md) and
+`TeamIdentifier` its Team ID. `spctl` must print `accepted` and
+`source=Notarized Developer ID`. The notarization ticket is stapled to the DMG
+and the app, so Gatekeeper accepts them without an online check. A build
+without these (for example a fork's test build) is not a release.
+
+## 4. Verify the source
 
 For builds from source (Flatpak, distribution packages), work from the tag,
 not from a branch:
@@ -89,13 +102,14 @@ git clone --branch v<version> https://github.com/aTrainTranscription/aTrain
 The tag archive `aTrain-<version>-source.tar.gz` is listed in `checksums.txt`,
 so a downloaded tarball can be checked the same way as the installer.
 
-## 4. Read the SBOM
+## 5. Read the SBOM
 
 `aTrain-<version>-windows.cdx.json` lists every Python package in the Windows
 build with version and licence, plus the bundled ML models and their
 Hugging Face revisions. Use it to scan for known vulnerabilities, for example
 with `pip-audit`, `grype`, or `trivy sbom`, or to review licences before
-redistribution.
+redistribution. `aTrain-<version>-macos.cdx.json` does the same for the macOS
+build.
 
 ## Reporting a mismatch
 
