@@ -23,3 +23,5 @@ Please add at least the following details:
 (adapted from https://github.com/openqda/openqda/edit/main/SECURITY.md)
 
 Release builds are code-signed; see the [Code signing policy](docs/code-signing-policy.md).
+
+Who can reach aTrain's local web server in each run mode and why encryption at rest is left to the operating system: [Deployment modes](docs/security/deployment-modes.md).
