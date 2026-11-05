@@ -328,8 +328,8 @@ jobs:
         run: uv run --no-sync playwright install --with-deps chromium
 
       - name: Run real-browser e2e tests
-        # Uses the same `aTrain start --no-native` subprocess pattern as the
-        # boot smoke, plus Playwright's Chromium driving it. See
+        # Uses the boot smoke's `aTrain start --no-native` subprocess pattern,
+        # bound to 127.0.0.1 here, plus Playwright's Chromium driving it. See
         # tests/e2e_browser/conftest.py for the fixture.
         run: uv run --no-sync pytest tests/e2e_browser -v
 
