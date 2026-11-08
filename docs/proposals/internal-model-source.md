@@ -63,7 +63,12 @@ with exactly the files and checksums listed in `models.json`.
 
 IT fills it by copying the models folder of a machine that has the models,
 for example after `aTrain init` or after running the script from the offline
-install docs. Any static web server or file share can serve it.
+install docs.
+
+The source is a plain file server: a static web server (any server that
+serves files by URL, e.g. nginx, Apache, IIS) or a network share. No special
+API, no directory listing, no authentication. aTrain only requests the files
+it knows from `models.json`.
 
 ### How a model is loaded
 
@@ -81,22 +86,11 @@ SHA-256.
 
 ### Where the setting comes from
 
-In this order, the first one found wins:
+Only the environment variable `ATRAIN_MODEL_SOURCE`. It can be rolled out by
+Group Policy and is enough for tests.
 
-1. Environment variable `ATRAIN_MODEL_SOURCE`.
-2. User file `<ATRAIN_DIR>/config.toml`.
-3. Machine file: `%ProgramData%\aTrain\config.toml` on Windows,
-   `/etc/atrain/config.toml` on Linux,
-   `/Library/Application Support/aTrain/config.toml` on macOS.
-
-```toml
-# config.toml
-model_source = '\\fileserver\atrain\models'  # literal string, no escaping
-```
-
-`tomllib` is in the standard library (Python 3.11+), so no new dependency.
-The machine file lets IT configure all users at once; the environment variable
-is enough for a first version and for tests.
+A configuration file (user and machine-wide) is out of scope here. It is
+tracked in #342, which covers all aTrain settings, not just this one.
 
 ## Security
 
@@ -105,8 +99,8 @@ is enough for a first version and for tests.
   fails and the files are removed, as today.
 - HTTPS is recommended. Plain HTTP on an internal network does not weaken
   integrity, for the same reason.
-- Authentication: a network share uses the user's Windows login. Web servers
-  that need authentication are out of scope for the first version.
+- Authentication: none. A network share uses the user's Windows login.
+  Web servers that need authentication are out of scope.
 - The "offline by design" rule in `AGENTS.md` and the code signing policy
   ("what the app transmits") need a sentence about the configured source.
 
@@ -118,7 +112,7 @@ is enough for a first version and for tests.
    both with a small fake manifest.
 4. Docs: a section in `deployment-windows.md` and in `offline-model-install.md`.
 
-The config file follows in a second PR once the behaviour is agreed.
+The config file is out of scope, see #342.
 
 ## Decisions
 
@@ -129,5 +123,7 @@ The config file follows in a second PR once the behaviour is agreed.
 - **Only models from `models.json`.** Only pinned models can be verified. The
   source may hold a subset of them, but a selected model must be complete and
   match the pinned checksums.
+- **Setting only via `ATRAIN_MODEL_SOURCE`.** Config file: #342.
+- **Plain file server.** No special API, no authentication.
 - **Models page shows the source:** separate issue #340, can be done in
   parallel. Until this proposal lands it shows Hugging Face.
