@@ -27,6 +27,8 @@ def _fake_metadata():
             "info": "A test model description.",
             "size": "75 MB",
             "downloaded": False,
+            "source": "Hugging Face",
+            "source_url": "https://huggingface.co/aTrain-core/faster-whisper-tiny/tree/abc123",
         },
         {"model": "large-v1", "group": "All others", "size": "3 GB", "downloaded": True},
     ]
@@ -70,6 +72,21 @@ async def test_models_page_lists_non_required_models(mocked_models, user: User):
     await user.should_see("large-v1")
     await user.should_see("75 MB")
     await user.should_see("3 GB")
+
+
+async def test_models_page_shows_download_source(mocked_models, user: User):
+    await user.open("/models")
+    await user.should_see("Model Manager", retries=100)
+    user.find(marker="model_group_all_others").click()
+    await user.should_see(marker="model_source_tiny")
+    link = user.find(marker="model_source_tiny").elements.pop()
+    assert isinstance(link, ui.link)
+    assert (
+        link.props["href"] == "https://huggingface.co/aTrain-core/faster-whisper-tiny/tree/abc123"
+    )
+    assert "Hugging Face" in link.text
+    # Rows without source metadata render without a link instead of failing.
+    await user.should_not_see(marker="model_source_large-v1")
 
 
 async def test_download_button_invokes_download_model(mocked_models, user: User):
