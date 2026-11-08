@@ -7,8 +7,30 @@ from dataclasses import dataclass, replace
 
 # Subtitle rules from the Netflix Timed Text Style Guides, linked to their passages below. The
 # per-language tables also follow the Netflix quality check of Subtitle Edit
-# (https://github.com/SubtitleEdit/subtitleedit, MIT License, Copyright (c) Nikolaj Olsson);
-# languages without an entry use the defaults.
+# (https://github.com/SubtitleEdit/subtitleedit); languages without an entry use the defaults.
+# The parts taken from Subtitle Edit are covered by its licence:
+#
+#   MIT License
+#
+#   Copyright (c) 2026 Nikolaj Olsson
+#
+#   Permission is hereby granted, free of charge, to any person obtaining a copy
+#   of this software and associated documentation files (the "Software"), to deal
+#   in the Software without restriction, including without limitation the rights
+#   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#   copies of the Software, and to permit persons to whom the Software is
+#   furnished to do so, subject to the following conditions:
+#
+#   The above copyright notice and this permission notice shall be included in all
+#   copies or substantial portions of the Software.
+#
+#   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+#   SOFTWARE.
 
 # Characters per line, "Character Limitation" in the language guides:
 # English I.2 https://partnerhelp.netflixstudios.com/hc/en-us/articles/217350977#h_01J1EZBGW3CPMYRS1SKDKXQQE6
@@ -67,6 +89,12 @@ SRT_DIALOG_DASHES = {
 SRT_NO_PUNCTUATION = {"ja": r"[。、]", "th": r"\?|\.(?=\s|$)", "zh": r"[，。,]|\.(?=\s|$)"}  # noqa: RUF001
 SRT_PUNCTUATION = (".", ",", "?", "!", ";", ":", "…", "。", "，", "、", "？", "！", "；", "：")  # noqa: RUF001
 SRT_SENTENCE_END = (".", "?", "!", "…", "。", "？", "！")  # noqa: RUF001
+# Languages that write ordinal numbers with a period ("am 2. September"). There a word of 1-3
+# digits and a period ends a sentence only after a long pause; years such as "2012." still do.
+SRT_ORDINAL_LANGUAGES = {
+    "bs", "cs", "da", "de", "et", "fi", "hr", "hu", "is", "lv", "nn", "no", "pl", "sk", "sl",
+    "sr", "tr",
+}  # fmt: skip
 # Pauses that end a sentence in unpunctuated text, as in Subtitle Edit's "add periods" step
 SRT_PAUSE_SENTENCE = 0.6
 SRT_PAUSE_ALWAYS = 1.25
@@ -217,7 +245,8 @@ def _srt_sentence_end(previous, following, profile):
     """Whether a sentence ends between two words, by punctuation or by a long enough pause."""
     text = previous["word"].strip()
     pause = following["start"] - previous["end"]
-    if text.endswith(SRT_SENTENCE_END) or pause > SRT_PAUSE_ALWAYS:
+    ordinal = profile.language in SRT_ORDINAL_LANGUAGES and re.fullmatch(r"\d{1,3}\.", text)
+    if (text.endswith(SRT_SENTENCE_END) and not ordinal) or pause > SRT_PAUSE_ALWAYS:
         return True
     if text.endswith(SRT_PUNCTUATION) or pause <= SRT_PAUSE_SENTENCE:
         return False

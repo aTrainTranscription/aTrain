@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from aTrain_core import engine
 from aTrain_core.backends import crisper_transformers
-from aTrain_core.backends.common import SRT_MAX_DURATION, group_word_segments
+from aTrain_core.backends.common import group_word_segments
 from aTrain_core.outputs import finalize
 from aTrain_core.settings import ComputeType, Device, ModelKey, validate_job_settings
 
@@ -117,7 +117,7 @@ def test_crisper_transcribe_with_model_logs_ignored_settings():
 @pytest.mark.parametrize(
     ("backend", "join_raw"), [("faster-whisper", True), ("crisper-transformers", False)]
 )
-def test_finalize_groups_cues_and_subtitles(backend, join_raw):
+def test_finalize_groups_cues(backend, join_raw):
     words = [
         (" Das", 0.0, 0.3, "A"),
         (" ist", 0.4, 0.6, "A"),
@@ -135,12 +135,9 @@ def test_finalize_groups_cues_and_subtitles(backend, join_raw):
         for t, s, e, sp in words
     ]
 
-    cues, subtitles = finalize({"segments": segments}, backend)
+    cues = finalize({"segments": segments}, backend)
 
     assert cues == {"segments": group_word_segments(segments, join_raw)}
-    assert subtitles == {
-        "segments": group_word_segments(segments, join_raw, max_duration=SRT_MAX_DURATION)
-    }
     assert [c["speaker"] for c in cues["segments"]] == ["A", "B"]
 
 
