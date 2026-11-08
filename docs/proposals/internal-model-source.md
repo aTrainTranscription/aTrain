@@ -57,6 +57,10 @@ The same layout as a local models folder:
     └── ...
 ```
 
+The source does not need to hold every model in `models.json`, only the ones
+the organisation wants to offer. But a model that a user selects must be there
+with exactly the files and checksums listed in `models.json`.
+
 IT fills it by copying the models folder of a machine that has the models,
 for example after `aTrain init` or after running the script from the offline
 install docs. Any static web server or file share can serve it.
@@ -116,10 +120,14 @@ is enough for a first version and for tests.
 
 The config file follows in a second PR once the behaviour is agreed.
 
-## Open questions
+## Decisions
 
-- Should aTrain fall back to Hugging Face when the source does not have a
-  model? This proposal says no, so that the setting is a hard guarantee.
-- Should the source also hold models that are not in `models.json`? Not in
-  this proposal: only pinned models can be verified.
-- Should the models page show where models come from?
+- **No fallback to Hugging Face.** When a source is set, aTrain never
+  contacts Hugging Face, so the setting is a hard guarantee. If the source is
+  not reachable, a file is missing, or a checksum does not match, the download
+  fails and aTrain shows the error.
+- **Only models from `models.json`.** Only pinned models can be verified. The
+  source may hold a subset of them, but a selected model must be complete and
+  match the pinned checksums.
+- **Models page shows the source:** separate issue #340, can be done in
+  parallel. Until this proposal lands it shows Hugging Face.
