@@ -6,6 +6,7 @@ yields that URL. Terminated on teardown.
 
 Individual tests receive Playwright's own `page` / `browser` fixtures from
 pytest-playwright and drive real Chromium against the running server.
+`test_host_check.py` only uses the server and sends plain HTTP requests.
 
 Kept in its own directory so `tests/ui/conftest.py`'s
 `pytest_plugins = ["nicegui.testing.user_plugin"]` does not apply here - the
@@ -34,6 +35,7 @@ def atrain_server() -> Generator[str, None, None]:
     # The subprocess must not look like it runs inside pytest: nicegui>=3's
     # ui.run sees PYTEST_CURRENT_TEST and then requires the screen-test port.
     env.pop("PYTEST_CURRENT_TEST", None)
+    # Without --host, aTrain binds to 127.0.0.1, so the host check (#300) is on.
     proc = subprocess.Popen(
         ["aTrain", "start", "--no-native"],
         stdout=subprocess.PIPE,
