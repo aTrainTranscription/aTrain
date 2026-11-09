@@ -14,12 +14,14 @@ Older releases are listed on the [GitHub releases page](https://github.com/aTrai
 - Releases ship sha256 checksums and a CycloneDX SBOM; the Windows MSIX is signed via SignPath.
 - Local WER evaluation script.
 - Docs: uninstall page, adding a model, verifying releases, Windows deployment.
+- A server bound to `127.0.0.1` or `localhost` rejects other host names and socket.io connections from other origins. `--allow-any-host` turns this off for a reverse proxy on the same machine.
 
 ### Changed
 
 - Improved model manager layout.
 - Engine split into reusable steps (groundwork for batch transcription).
 - NiceGUI upgraded to 3.x.
+- `aTrain start --no-native` binds to `127.0.0.1` by default. Use `--host 0.0.0.0` to serve on the network.
 
 ### Fixed
 

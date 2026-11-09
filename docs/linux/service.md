@@ -38,7 +38,7 @@ Wants=network-online.target
 [Service]
 Restart=always
 Type=simple
-ExecStart=/opt/aTrain/.venv/bin/aTrain start --no-native --no-show
+ExecStart=/opt/aTrain/.venv/bin/aTrain start --no-native --no-show --host 0.0.0.0
 Environment='ATRAIN_USER_DIR=/srv/aTrain'
 Environment='WAKEPY_FAKE_SUCCESS=yes'
 Environment='HF_TOKEN=<your-token>'
@@ -53,7 +53,7 @@ sudo nano /etc/systemd/system/aTrain.service
 # CTRL + X, CTRL + Y, Enter
 ```
 
-Append `--host` and `--port` in the 'ExecStart' line to configure those settings.
+Change `--host` or append `--port` in the 'ExecStart' line to configure those settings. Without `--host`, aTrain only listens on `127.0.0.1`. With `--host 0.0.0.0` it does not check host names or origins, so put a reverse proxy with authentication in front of it.
 
 A Hugging Face token is required to successfully download the speaker detection model. If the download fails, remove the `/srv/aTrain/models/speaker-detection` folder, check the token, and if you have accepted the terms on Hugging Face, retry. After the first successful transcription with speaker detection, that environment variable can be removed.
 

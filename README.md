@@ -118,7 +118,7 @@ deployments:
 | --- | --- |
 | `--no-native` | Run without a native desktop window. |
 | `--no-show` | Do not automatically open a browser tab. |
-| `--host HOST` | Bind to a specific IP address. |
+| `--host HOST` | Bind to a specific IP address (default `127.0.0.1`). |
 | `--port PORT` | Listen on a specific port. |
 | `--allow-any-host` | Turn off the host and origin check, needed behind a reverse proxy on the same machine when binding to `127.0.0.1` or `localhost`. |
 
@@ -127,6 +127,8 @@ For example, to run a server on port 8080 without opening a browser tab:
 ```bash
 aTrain start --no-native --no-show --host 0.0.0.0 --port 8080
 ```
+
+With any address other than `127.0.0.1` or `localhost`, aTrain does not check host names or origins. Put a reverse proxy with authentication in front of it.
 
 A guide for setting up aTrain as a service is available in the [Linux service guide](docs/linux/service.md).
 
