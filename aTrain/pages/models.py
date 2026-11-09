@@ -50,14 +50,24 @@ def page():
                             with ui.grid(columns=MODEL_GRID_COLUMNS) as grid:
                                 grid.classes("w-full items-center")
                                 ui.label(str(i + 1)).classes("font-light")
-                                with ui.row(align_items="center").classes("gap-1"):
-                                    ui.label(model.get("display_name", model["model"])).classes(
-                                        "font-medium"
-                                    )
-                                    if info := model.get("info"):
-                                        ui.icon("info_outline", size="sm", color="grey").tooltip(
-                                            info
-                                        ).mark(f"model_info_{model['model']}")
+                                with ui.column().classes("gap-0 min-w-0"):
+                                    with ui.row(align_items="center").classes("gap-1"):
+                                        ui.label(model.get("display_name", model["model"])).classes(
+                                            "font-medium"
+                                        )
+                                        if info := model.get("info"):
+                                            ui.icon(
+                                                "info_outline", size="sm", color="grey"
+                                            ).tooltip(info).mark(f"model_info_{model['model']}")
+                                    if source_url := model.get("source_url"):
+                                        # break-all: long URLs or UNC paths must wrap.
+                                        ui.link(
+                                            f"Source: {model['source']}",
+                                            source_url,
+                                            new_tab=True,
+                                        ).classes("text-xs text-grey break-all").tooltip(
+                                            source_url
+                                        ).mark(f"model_source_{model['model']}")
                                 ui.label(model["size"]).classes("font-light")
                                 with ui.row():
                                     if model["downloaded"]:
