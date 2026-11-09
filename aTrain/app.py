@@ -7,6 +7,8 @@ from aTrain_core.globals import ATRAIN_DIR, FLATPAK, REQUIRED_MODELS
 from aTrain_core.load_resources import get_model
 from typer import Option, Typer
 
+from aTrain.utils.hosts import bind_host, host_check_applies, restrict_to_loopback_hosts
+
 cli = Typer(help="CLI for aTrain.")
 
 
@@ -24,9 +26,7 @@ def start(
     show: Annotated[bool, Option(help="If no-native, open Browser tab.")] = True,
     host: Annotated[
         str | None,
-        Option(
-            help="Which IP to bind to (defaults to '127.0.0.1 in native mode, otherwise '0.0.0.0')."
-        ),
+        Option(help="Which IP to bind to (default: '127.0.0.1'; '0.0.0.0' serves on the network)."),
     ] = None,
     port: Annotated[
         int | None,
@@ -34,6 +34,12 @@ def start(
             help="Which port to bind to  (default: 8080 in no-native mode, and an automatically determined open port in native mode)."
         ),
     ] = None,
+    allow_any_host: Annotated[
+        bool,
+        Option(
+            help="Turn off the host and origin check of a server bound to 127.0.0.1 or localhost (needed behind a reverse proxy on the same machine)."
+        ),
+    ] = False,
 ):
     """Start aTrain (requires GUI extras — install with `pip install 'aTrain[gui]'`)."""
     # Lazy imports: keep the GUI stack out of the import chain so headless
@@ -76,6 +82,12 @@ def start(
             host=host,
             port=port,
         )
+
+    # Without --host, aTrain binds to 127.0.0.1 in both modes. Pass --host, for
+    # example 0.0.0.0, to serve on the network (#300).
+    host = bind_host(host)
+    if host_check_applies(host, allow_any_host):
+        restrict_to_loopback_hosts()
 
     if FLATPAK:
         ui_run(native, reload, show, host, port)
