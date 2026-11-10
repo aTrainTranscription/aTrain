@@ -40,7 +40,12 @@ SCRIPT = textwrap.dedent(
 def test_second_download_after_a_progress_download_in_the_same_worker(tmp_path):
     script = tmp_path / "sequence.py"
     script.write_text(SCRIPT)
-    env = {**os.environ, "ATRAIN_USER_DIR": str(tmp_path / "data")}
+    env = {
+        **os.environ,
+        "ATRAIN_USER_DIR": str(tmp_path / "data"),
+        "HF_HOME": str(tmp_path / "hf"),
+        "HF_XET_CACHE": str(tmp_path / "xet"),
+    }
 
     result = subprocess.run(
         [sys.executable, str(script)], env=env, capture_output=True, text=True, timeout=900

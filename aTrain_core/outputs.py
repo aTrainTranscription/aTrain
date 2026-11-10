@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from aTrain_core.backends.common import SRT_MAX_DURATION, ends_sentence, group_word_segments
+from aTrain_core.backends.common import ends_sentence, group_word_segments
 from aTrain_core.globals import (
     LOG_FILENAME,
     METADATA_FILENAME,
@@ -53,7 +53,7 @@ def claim_file_id(file_path, timestamp) -> str:
             file_id = f"{base_file_id}-{suffix}"
 
 
-def create_output_files(result, speaker_detection, file_id, subtitles=None, language=None):
+def create_output_files(result, speaker_detection, file_id, language=None):
     """Creates output files based on the transcription result."""
     create_json_file(result, file_id)
     create_txt_file(
@@ -66,7 +66,7 @@ def create_output_files(result, speaker_detection, file_id, subtitles=None, lang
         result, file_id, speaker_detection, maxqda=False, timestamps=True, brackets=False
     )  # NEW: NVivo output format
     create_txt_file(result, file_id, speaker_detection, maxqda=True, timestamps=True, brackets=True)
-    create_srt_file(subtitles or result, file_id, language)
+    create_srt_file(result, file_id, language)
 
 
 def create_json_file(result, file_id):
@@ -185,15 +185,12 @@ def add_processing_time_to_metadata(file_id):
         yaml.dump(metadata, metadata_file)
 
 
-def finalize(transcript: dict, backend: str) -> tuple[dict, dict]:
-    """Group the word segments into output cues, and into shorter cues for subtitles.
+def finalize(transcript: dict, backend: str) -> dict:
+    """Group the word segments into output cues.
     Runs after speaker detection, because a speaker change starts a new cue."""
 
     join_raw = backend != "crisper-transformers"
-    segments = transcript["segments"]
-    cues = {"segments": group_word_segments(segments, join_raw)}
-    subtitles = {"segments": group_word_segments(segments, join_raw, max_duration=SRT_MAX_DURATION)}
-    return cues, subtitles
+    return {"segments": group_word_segments(transcript["segments"], join_raw)}
 
 
 def write_final_outputs(
@@ -215,9 +212,9 @@ def write_final_outputs(
         shutil.copyfile(work_log, directory / LOG_FILENAME)
     if not (directory / METADATA_FILENAME).exists():
         create_metadata(settings, audio_duration)
-    cues, subtitles = finalize(transcript, backend)
+    cues = finalize(transcript, backend)
     language = transcript.get("language", settings.language)
-    create_output_files(cues, settings.speaker_detection, file_id, subtitles, language)
+    create_output_files(cues, settings.speaker_detection, file_id, language)
     write_logfile("Created output files", file_id)
     add_processing_time_to_metadata(file_id)
     write_logfile("Processing time added to metadata", file_id)

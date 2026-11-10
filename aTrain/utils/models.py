@@ -65,6 +65,12 @@ def read_model_metadata() -> list:
             "group": model_metadata[model].get("group", "All others"),
             "size": model_metadata[model]["repo_size_human"],
             "downloaded": model in downloaded_models,
+            # Only Hugging Face for now; an internal source (#322) goes here.
+            "source": "Hugging Face",
+            "source_url": (
+                f"https://huggingface.co/{model_metadata[model]['repo_id']}"
+                f"/tree/{model_metadata[model]['revision']}"
+            ),
         }
         if info := model_metadata[model].get("info"):
             model_info["info"] = info
