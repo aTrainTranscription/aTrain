@@ -87,6 +87,12 @@ ATRAIN_CRISPER_MODEL_PATH=/path/to/crisperwhisper-v2-large \
 
 # Building a standalone executable
 
+The `macOS startup (macOS 15)` and `macOS startup (macOS 27)` CI jobs build
+the packaged app and check startup on pull requests. They need no signing
+secrets and skip docs-only PRs. Repository maintainers should add both check
+names to the required status checks for `develop` (and any other protected
+PR target branch); running CI alone does not prevent merging a failing check.
+
 We use [PyInstaller](https://pyinstaller.org/) to freeze aTrain into a
 standalone executable. The repository ships PyInstaller spec files per
 platform:
