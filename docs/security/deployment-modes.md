@@ -7,11 +7,11 @@ server, where the data lives and what aTrain leaves to the operating system.
 
 ## Overview
 
-| Mode                    | Started with                                  | Listens on                | Reachable by                                        |
-| ----------------------- | --------------------------------------------- | ------------------------- | --------------------------------------------------- |
-| Native window (default) | the installed apps                            | `127.0.0.1`, a free port  | processes on the same machine                       |
-| Browser on localhost    | `aTrain start --no-native --host 127.0.0.1`   | `127.0.0.1`, port 8080    | processes on the same machine                       |
-| Network mode            | `aTrain start --no-native`, the Linux service | all interfaces, port 8080 | everyone who can reach the machine over the network |
+| Mode                    | Started with                                                 | Listens on                | Reachable by                                        |
+| ----------------------- | ------------------------------------------------------------ | ------------------------- | --------------------------------------------------- |
+| Native window (default) | the installed apps                                           | `127.0.0.1`, a free port  | processes on the same machine                       |
+| Browser on localhost    | `aTrain start --no-native`                                   | `127.0.0.1`, port 8080    | processes on the same machine                       |
+| Network mode            | `aTrain start --no-native --host 0.0.0.0`, the Linux service | all interfaces, port 8080 | everyone who can reach the machine over the network |
 
 ## Native window
 
@@ -19,13 +19,17 @@ This is how the installed apps run.
 
 **Access.** The server listens only on the loopback interface, so traffic
 between window and server never leaves the machine and there is nothing for
-TLS to protect. The server has no login. While aTrain runs, every process on
-the machine can operate it: read and delete transcripts, download and remove
-models and, on Windows, start transcriptions. The trust boundary is therefore
-the machine. On a machine with several simultaneous sessions, such as a
-terminal server, all signed-in users can reach the server and aTrain cannot
-keep them apart. Where that is not acceptable, run aTrain on a machine or VM
-with a single user session.
+TLS to protect. The server has no login. Its host and origin check rejects
+socket.io connections from other origins and requests addressed to any name
+other than `127.0.0.1` or `localhost`. The server therefore rejects the
+requests of a web page that reaches it under another domain name, for example
+through DNS rebinding. While aTrain runs, every process on the machine can
+still operate it: read and delete transcripts, download and remove models
+and, on Windows, start transcriptions. The trust boundary is therefore the
+machine. On a machine with several simultaneous sessions, such as a terminal
+server, all signed-in users can reach the server and aTrain cannot keep them
+apart. Where that is not acceptable, run aTrain on a machine or VM with a
+single user session.
 
 **Data.** Transcripts are stored under `Documents\aTrain` or the folder set in
 `ATRAIN_USER_DIR`, settings and models next to them. The Flatpak keeps
@@ -54,25 +58,32 @@ the server as described above.
 ## Browser on localhost
 
 If the native window does not work on a machine, aTrain can open in the
-default browser instead, with `aTrain start --no-native --host 127.0.0.1`.
-This works in the Flatpak and from source; the Windows app always opens the
-native window. The server still listens only on `127.0.0.1`, so the trust
-boundary is the same as above. The recording is uploaded on every platform,
-with the temporary copies described above, and browser extensions see the
-page like any other page.
-
-Without `--host 127.0.0.1`, `--no-native` listens on all interfaces and
-aTrain runs in network mode.
+default browser instead, with `aTrain start --no-native`. This works in the
+Flatpak and from source; the Windows app always opens the native window. The
+server still listens only on `127.0.0.1`, so the trust boundary and the host
+and origin check are the same as above. The recording is uploaded on every
+platform, with the temporary copies described above, and browser extensions
+see the page like any other page.
 
 ## Network mode
 
-`aTrain start --no-native` without `--host 127.0.0.1` and the
-[Linux service](../linux/service.md) make aTrain reachable over the network.
-aTrain has no login and no TLS. Do not expose it without a reverse proxy that
-terminates TLS and authenticates users. What a shared setup needs beyond that,
-such as separating the users' data, the service account and model downloads,
-is not documented yet; [#150](https://github.com/aTrainTranscription/aTrain/issues/150)
-tracks it.
+aTrain is reachable over the network when it listens on all interfaces or on
+the machine's network address, for example with
+`aTrain start --no-native --host 0.0.0.0` or as the
+[Linux service](../linux/service.md). aTrain has no login and no TLS. Do not
+expose it without a reverse proxy that terminates TLS and authenticates users.
+
+The host and origin check is on only when aTrain listens on `127.0.0.1` or
+`localhost`. With any other `--host`, aTrain accepts requests under any host
+name and from any origin.
+
+A reverse proxy on the same machine can also forward to aTrain on
+`127.0.0.1`. In that setup aTrain needs `--allow-any-host`, which turns the
+host and origin check off as well.
+
+What a shared setup needs beyond that, such as separating the users' data,
+the service account and model downloads, is not documented yet;
+[#150](https://github.com/aTrainTranscription/aTrain/issues/150) tracks it.
 
 ## Encryption at rest
 
