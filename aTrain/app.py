@@ -22,7 +22,6 @@ def init():
 @cli.command()
 def start(
     native: Annotated[bool, Option(help="Run in a native window")] = True,
-    reload: Annotated[bool, Option(help="Reload on code change")] = False,
     show: Annotated[bool, Option(help="If no-native, open Browser tab.")] = True,
     host: Annotated[
         str | None,
@@ -66,7 +65,7 @@ def start(
 
     print("Running aTrain")
 
-    def ui_run(native: bool, reload: bool, show: bool, host: str, port: int):
+    def ui_run(native: bool, show: bool, host: str, port: int):
         # A worker pool forked from the running server stops all page updates
         # on Linux; the first download then never finishes in the UI. Windows
         # and macOS spawn anyway; Flatpak sets its start method in globals.py.
@@ -74,7 +73,9 @@ def start(
             run.process_pool_start_method = "spawn"
         ui.run(
             native=native,
-            reload=reload,
+            # NiceGUI reloads by default, which fails when aTrain runs as a console
+            # script. To reload on code changes, run `python dev.py`.
+            reload=False,
             title="aTrain",
             favicon=cast(Path, files("aTrain") / "static" / "favicon.ico"),
             window_size=(1280, 720) if native else None,
@@ -90,7 +91,7 @@ def start(
         restrict_to_loopback_hosts()
 
     if FLATPAK:
-        ui_run(native, reload, show, host, port)
+        ui_run(native, show, host, port)
     else:
         with keep.running():
-            ui_run(native, reload, show, host, port)
+            ui_run(native, show, host, port)

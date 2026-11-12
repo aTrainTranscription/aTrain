@@ -59,7 +59,7 @@ ENV UV_LINK_MODE=copy \
 #     libraries plus pkg-config — none of which the GTK backend needs here.
 #   - dask: only used by full transcription, not by UI dev.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project \
+    uv sync --frozen --no-install-project --extra gui \
         --no-install-package pyqt5 \
         --no-install-package pyqtwebengine \
         --no-install-package pyqt5-qt5 \
@@ -92,6 +92,6 @@ EXPOSE 8080
 
 # Run in browser mode (no pywebview native window), with hot-reload.
 # The source directory is bind-mounted by docker-compose, so edits on the
-# host are reflected immediately inside the container; --reload restarts the
+# host are reflected immediately inside the container; dev.py restarts the
 # NiceGUI server on file change so contributors don't need a manual restart.
-CMD ["aTrain", "start", "--no-native", "--reload"]
+CMD ["python", "dev.py"]

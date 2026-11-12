@@ -43,12 +43,13 @@ docker compose up        # builds the image and starts aTrain
 
 The app is then served at `http://localhost:8080`.
 
-The container runs aTrain in **browser mode** (`aTrain start --no-native`). It
-deliberately does **not** ship the native desktop-window backend: `pywebview`'s
-GTK backend has no use in a headless container, and excluding it keeps the image
-lean and portable. Development inside the container is therefore browser-based
-only; contributors who need to exercise the native window can do so on their
-host after installing the GUI build dependencies above.
+The container runs aTrain in **browser mode** with `python dev.py`, which
+restarts the server when you edit the source. It deliberately does **not** ship
+the native desktop-window backend: `pywebview`'s GTK backend has no use in a
+headless container, and excluding it keeps the image lean and portable.
+Development inside the container is therefore browser-based only; contributors
+who need to exercise the native window can do so on their host after installing
+the GUI build dependencies above.
 
 ## Running the CI checks locally
 
