@@ -53,6 +53,7 @@ Run `uv lock` after any dependency change and commit `uv.lock`; CI installs with
 Known pitfalls in this repo. Add new ones as they come up.
 
 - Models and user data live under `ATRAIN_USER_DIR` (default `~/Documents/aTrain`; Flatpak keeps models in the XDG data dir instead). Tests must point it at a temp dir; the fixtures in `tests/core/test_transcription_e2e.py` show how. Never let a test download into the real folder.
+- The event log (`aTrain_core/event_log.py`) is the exception: it lives in the platform's log folder, not under `ATRAIN_USER_DIR`. On Linux, tests that run `aTrain start` set `XDG_STATE_HOME` to a temp dir, like `tests/ui/test_boot_serve.py`. On Windows and macOS such a test writes to the real log folder.
 - Adding a model means a `models.json` entry with file hashes and a licence id, and `.github/scripts/build-sbom.py` must accept it. Follow [docs/adding-a-model.md](docs/adding-a-model.md).
 - Model download progress works by patching `huggingface_hub` internals in `aTrain_core/load_resources.py`. Check that path when touching downloads or bumping `huggingface_hub`.
 - Heavy imports (torch, ctranslate2) must stay out of the app's startup path, or the splash screen never shows.

@@ -15,6 +15,7 @@ Older releases are listed on the [GitHub releases page](https://github.com/aTrai
 - Local WER evaluation script.
 - Docs: uninstall page, adding a model, verifying releases, Windows deployment.
 - A server bound to `127.0.0.1` or `localhost` rejects other host names and socket.io connections from other origins. `--allow-any-host` turns this off for a reverse proxy on the same machine.
+- Central log of security-relevant events. So far it records server starts, stops, failed starts and unhandled errors.
 
 ### Changed
 
