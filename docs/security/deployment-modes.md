@@ -89,7 +89,7 @@ the service account and model downloads, is not documented yet;
 
 aTrain stores transcripts as plain files: text, SRT and JSON, with metadata
 and a log. It also stores a ZIP of a transcript when you use **Download**, the
-last used settings and the models. While a Windows or browser transcription
+last used settings, the models and the [event log](../operations.md). While a Windows or browser transcription
 runs, the temporary copies of the recording described above exist as well.
 Deleting transcripts in the archive, one by one or with **Delete All**,
 removes the files without overwriting them, so the data stays on the disk
