@@ -22,7 +22,10 @@
 #   ZENODO_METADATA     (optional) metadata file, defaults to .zenodo.json
 #   ZENODO_APPEND       (optional) 1 = add the files to the unpublished draft
 #                       of <version> instead of starting one; fails if there
-#                       is none. Requires ZENODO_CONCEPT_ID
+#                       is none. Requires ZENODO_DRAFT_ID or ZENODO_CONCEPT_ID
+#   ZENODO_DRAFT_ID     (optional) explicit draft id for ZENODO_APPEND=1;
+#                       takes precedence over looking up ZENODO_CONCEPT_ID
+#   GITHUB_OUTPUT       (optional) receives draft-id after a successful upload
 #
 # Example (rehearse against the sandbox):
 #   ZENODO_TOKEN=... ZENODO_BASE=https://sandbox.zenodo.org \
@@ -45,6 +48,9 @@ Environment:
   ZENODO_METADATA    (optional) metadata file, default .zenodo.json
   ZENODO_APPEND      (optional) 1 = add the files to the existing draft of
                      <version>, keeping its other files
+  ZENODO_DRAFT_ID    (optional) draft id for append; otherwise looks up the
+                     draft using ZENODO_CONCEPT_ID
+  GITHUB_OUTPUT      (optional) receives draft-id after a successful upload
 USAGE
 }
 
@@ -61,8 +67,8 @@ for var in ZENODO_TOKEN ZENODO_BASE GITHUB_REPOSITORY; do
     exit 2
   fi
 done
-if [[ "${ZENODO_APPEND:-}" == 1 && -z "${ZENODO_CONCEPT_ID:-}" ]]; then
-  echo "error: ZENODO_APPEND=1 needs ZENODO_CONCEPT_ID to find the draft" >&2
+if [[ "${ZENODO_APPEND:-}" == 1 && -z "${ZENODO_DRAFT_ID:-}" && -z "${ZENODO_CONCEPT_ID:-}" ]]; then
+  echo "error: ZENODO_APPEND=1 needs ZENODO_DRAFT_ID or ZENODO_CONCEPT_ID to find the draft" >&2
   exit 2
 fi
 [[ -f "$metadata_file" ]] || { echo "error: $metadata_file not found" >&2; exit 2; }
@@ -84,23 +90,27 @@ api() {  # api <method> <path-or-url> [curl args...]
     -H "Authorization: Bearer $ZENODO_TOKEN" "$@" "$url"
 }
 
-if [[ -n "${ZENODO_CONCEPT_ID:-}" ]]; then
+pending="${ZENODO_DRAFT_ID:-}"
+if [[ -n "${ZENODO_CONCEPT_ID:-}" && ( "${ZENODO_APPEND:-}" != 1 || -z "$pending" ) ]]; then
   # An unpublished draft blocks `newversion`, so reuse it - this release
   # supersedes it anyway. `submitted == false` excludes the edit draft of an
   # already published record, whose files cannot be deleted (403).
   pending="$(api GET "/deposit/depositions?q=conceptrecid:$ZENODO_CONCEPT_ID&status=draft" \
     | jqr '[.[] | select(.submitted == false)][0].id // empty')"
-  if [[ "${ZENODO_APPEND:-}" == 1 ]]; then
-    # Only the draft the first upload of this release made: appending to
-    # anything else would mix two versions in one record.
-    deposition=""
-    [[ -n "$pending" ]] && deposition="$(api GET "/deposit/depositions/$pending")"
-    if [[ -z "$deposition" || "$(jqr '.metadata.version // empty' <<<"$deposition")" != "$version" ]]; then
-      echo "::error::No unpublished Zenodo draft for $version to append to."
-      exit 1
-    fi
-    echo "appending to Zenodo draft $pending"
-  elif [[ -n "$pending" ]]; then
+fi
+if [[ "${ZENODO_APPEND:-}" == 1 ]]; then
+  # Use the first upload's draft, including a new concept's first release.
+  # Check its state and version before deleting or uploading any files.
+  deposition=""
+  [[ -n "$pending" ]] && deposition="$(api GET "/deposit/depositions/$pending")"
+  if [[ -z "$deposition" ]] || ! jq -e --arg v "$version" \
+      '.submitted == false and .metadata.version == $v' <<<"$deposition" > /dev/null; then
+    echo "::error::No unpublished Zenodo draft for $version to append to."
+    exit 1
+  fi
+  echo "appending to Zenodo draft $pending"
+elif [[ -n "${ZENODO_CONCEPT_ID:-}" ]]; then
+  if [[ -n "$pending" ]]; then
     echo "::warning::Zenodo draft $pending was still unpublished - reusing it for $version."
     deposition="$(api GET "/deposit/depositions/$pending")"
   else
@@ -154,7 +164,10 @@ jq --arg v "$version" --arg repo "$GITHUB_REPOSITORY" '{metadata: (. + {
 api PUT "/deposit/depositions/$id" -H 'Content-Type: application/json' \
   -d @"$rendered_metadata" -o /dev/null -w "metadata http=%{http_code}\n"
 
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  printf 'draft-id=%s\n' "$id" >> "$GITHUB_OUTPUT"
+fi
 echo "::notice::Zenodo draft ready for review: $ZENODO_BASE/uploads/$id"
-if [[ -z "${ZENODO_CONCEPT_ID:-}" ]]; then
+if [[ -z "${ZENODO_CONCEPT_ID:-}" && "${ZENODO_APPEND:-}" != 1 ]]; then
   echo "::notice::First record - after publishing it, set the repo variable ZENODO_CONCEPT_ID to its concept id so later releases attach as new versions."
 fi
