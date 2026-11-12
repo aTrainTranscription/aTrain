@@ -263,7 +263,8 @@ class JobStore:
                 (JobSpec.from_json(job["spec"]), JobState.from_json(job["state"]))
                 for job in data["jobs"]
             ]
-        except Exception as e:
+        # Only a broken file is moved aside; a failed read (OSError) raises and keeps it.
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             unreadable = self.path.with_name(f"{QUEUE_FILENAME}.unreadable-{stamp}")
             os.replace(self.path, unreadable)

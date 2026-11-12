@@ -91,6 +91,21 @@ def test_unreadable_queue_is_moved_aside(tmp_path):
     assert [p.name.startswith("queue.json.unreadable-") for p in tmp_path.iterdir()] == [True]
 
 
+def test_read_error_keeps_the_queue_file(tmp_path, monkeypatch):
+    """A failed read (e.g. a Windows sharing violation) is not a broken queue."""
+    store = JobStore(tmp_path, tmp_path / "transcriptions")
+    store.add([make_spec(id="a")])
+
+    def locked(*args, **kwargs):
+        raise PermissionError("file is in use")
+
+    monkeypatch.setattr(jobs.Path, "read_text", locked)
+    with pytest.raises(PermissionError):
+        JobStore(tmp_path, tmp_path / "transcriptions")
+    monkeypatch.undo()
+    assert ids(JobStore(tmp_path, tmp_path / "transcriptions")) == ["a"]
+
+
 def test_remove_deletes_work_folder_and_staged_upload_only(tmp_path):
     outside = tmp_path / "Interviews" / "interview.mp3"
     outside.parent.mkdir()
