@@ -1,7 +1,16 @@
 """The start page must stop quietly when its client is gone before it is built."""
 
+import sys
+
 import pytest
-from aTrain.pages import transcribe
+
+
+@pytest.fixture
+def transcribe():
+    from aTrain.pages import transcribe
+
+    yield transcribe
+    sys.modules.pop("aTrain.pages.transcribe", None)
 
 
 class DeletedClient:
