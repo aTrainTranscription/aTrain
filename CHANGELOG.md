@@ -23,6 +23,10 @@ Older releases are listed on the [GitHub releases page](https://github.com/aTrai
 - NiceGUI upgraded to 3.x.
 - `aTrain start --no-native` binds to `127.0.0.1` by default. Use `--host 0.0.0.0` to serve on the network.
 
+### Removed
+
+- `aTrain start --reload`. It never started the server. To reload on code changes, run `python dev.py`.
+
 ### Fixed
 
 - Missing transcript output caused by the 128-token decoding cap.
