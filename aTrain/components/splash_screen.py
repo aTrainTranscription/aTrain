@@ -20,4 +20,5 @@ async def splash_screen():
         # Import in threads for improved startup speed
         await run.io_bound(importlib.import_module, name="torch")
         await run.io_bound(importlib.import_module, name="aTrain_core.transcribe")
-        splash.delete()
+        if not splash.is_deleted:
+            splash.delete()
