@@ -16,7 +16,11 @@ from nicegui import Client, app, ui
 @ui.page("/")
 async def page(client: Client):
     await client.connected()
+    if client.is_deleted:
+        return
     await splash_screen()
+    if client.is_deleted:
+        return
     with base_layout():
         with ui.element("div").classes(
             "w-full h-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
