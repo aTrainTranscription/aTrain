@@ -18,7 +18,7 @@ class ClientDeletedDuringSplash:
         return None
 
 
-async def test_page_returns_without_building_for_a_deleted_client(monkeypatch):
+async def test_page_returns_without_building_for_a_deleted_client(monkeypatch, transcribe):
     async def fail_splash():
         pytest.fail("splash_screen must not run for a deleted client")
 
