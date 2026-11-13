@@ -31,7 +31,7 @@ async def test_page_returns_without_building_for_a_deleted_client(monkeypatch):
     await transcribe.page(DeletedClient())
 
 
-async def test_page_returns_without_building_when_client_is_deleted_during_splash(monkeypatch):
+async def test_page_returns_without_building_when_client_is_deleted_during_splash(monkeypatch, transcribe):
     client = ClientDeletedDuringSplash()
 
     async def splash_then_delete():
