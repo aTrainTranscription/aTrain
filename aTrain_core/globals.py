@@ -6,7 +6,7 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import cast
 
-from platformdirs import user_data_path, user_documents_path
+from platformdirs import user_data_path, user_documents_path, user_log_path
 
 FLATPAK = bool(os.environ.get("FLATPAK_ID"))
 # pyannote requires an explicit opt-in/out for telemetry metrics and raises
@@ -33,6 +33,10 @@ ATRAIN_DIR = (
     else (user_documents_path() / "aTrain")
 )
 MODELS_DIR = (user_data_path() / "models") if FLATPAK else (ATRAIN_DIR / "models")
+# The app name goes in as an argument. user_log_path() / "aTrain" would give a
+# different folder, for example %LOCALAPPDATA%\Logs\aTrain instead of the
+# %LOCALAPPDATA%\aTrain\Logs that docs/operations.md names.
+EVENT_LOG_DIR = user_log_path("aTrain", appauthor=False)
 
 if FLATPAK:
     flatpak_required_models_dir = Path("/app/share/atrain-required-models")

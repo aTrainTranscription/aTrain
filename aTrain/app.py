@@ -1,13 +1,16 @@
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Annotated, cast
 
+from aTrain_core.event_log import log_event, log_unhandled_exception, setup_event_log
 from aTrain_core.globals import ATRAIN_DIR, FLATPAK, REQUIRED_MODELS
 from aTrain_core.load_resources import get_model
 from typer import Option, Typer
 
 from aTrain.utils.hosts import bind_host, host_check_applies, restrict_to_loopback_hosts
+from aTrain.version import __version__
 
 cli = Typer(help="CLI for aTrain.")
 
@@ -54,7 +57,8 @@ def start(
             user_config_path() / "aTrain" if FLATPAK else (ATRAIN_DIR / "settings")
         )
         with patch.dict(os.environ, NICEGUI_STORAGE_PATH=str(nicegui_storage_path)):
-            from nicegui import run, ui
+            from nicegui import app, run, ui
+            from nicegui.error import error_content
 
             from aTrain.pages import about, archive, faq, models, transcribe  # noqa
         from wakepy import keep
@@ -89,8 +93,35 @@ def start(
     if host_check_applies(host, allow_any_host):
         restrict_to_loopback_hosts()
 
-    if FLATPAK:
-        ui_run(native, reload, show, host, port)
-    else:
-        with keep.running():
+    setup_event_log()
+    log_event(
+        "server_started",
+        version=__version__,
+        native=native,
+        host=host,
+        port=port,
+        allow_any_host=allow_any_host,
+    )
+    app.on_shutdown(lambda: log_event("server_stopped"))
+    app.on_exception(log_unhandled_exception)
+    # Without a handler of its own, NiceGUI shows its 500 page for an error while
+    # building a page and does not call the hook above. Show the same page and log it.
+    app.on_page_exception(lambda error: error_content(500, error))
+
+    try:
+        if FLATPAK:
             ui_run(native, reload, show, host, port)
+        else:
+            with keep.running():
+                ui_run(native, reload, show, host, port)
+    except SystemExit as error:
+        # uvicorn and NiceGUI end a failed start, a taken port for example, with
+        # sys.exit(1). The reason goes only to stderr.
+        if error.code not in (None, 0):
+            log_event("server_failed", logging.ERROR, exit_code=error.code)
+        raise
+    except Exception as error:
+        # An exception here ends aTrain. The Windows build has no console, so the
+        # event log is the only place that records it.
+        log_unhandled_exception(error)
+        raise
