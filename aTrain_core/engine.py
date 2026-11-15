@@ -156,11 +156,12 @@ def transcription_with_progress_bar(segments, info, progress: MutableMapping):
     with tqdm(
         total=total_duration, unit=" audio seconds", desc="Transcribing with Whisper"
     ) as pbar:
+        # total first: a progress sender may send at once, with whatever total it has
+        progress["total"] = total_duration
         progress["task"] = "Transcribe"
         for segment in segments:
             segments_new.append(segment)
             progress["current"] = segment.end
-            progress["total"] = total_duration
             pbar.update(segment.end - timestamps)
             timestamps = segment.end
         if timestamps < info.duration:  # silence at the end of the audio

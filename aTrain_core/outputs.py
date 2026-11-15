@@ -25,30 +25,32 @@ from aTrain_core.output_formats.netflix_subtitles import netflix_issues, srt_doc
 from aTrain_core.settings import Settings
 
 
-def create_output_files(result, speaker_detection, file_id, language=None):
+def create_output_files(result, speaker_detection, directory: Path, language=None):
     """Creates output files based on the transcription result."""
-    create_json_file(result, file_id)
+    create_json_file(result, directory)
     create_txt_file(
-        result, file_id, speaker_detection, maxqda=False, timestamps=False, brackets=True
+        result, directory, speaker_detection, maxqda=False, timestamps=False, brackets=True
     )
     create_txt_file(
-        result, file_id, speaker_detection, maxqda=False, timestamps=True, brackets=True
+        result, directory, speaker_detection, maxqda=False, timestamps=True, brackets=True
     )
     create_txt_file(
-        result, file_id, speaker_detection, maxqda=False, timestamps=True, brackets=False
+        result, directory, speaker_detection, maxqda=False, timestamps=True, brackets=False
     )  # NEW: NVivo output format
-    create_txt_file(result, file_id, speaker_detection, maxqda=True, timestamps=True, brackets=True)
-    create_srt_file(result, file_id, language)
+    create_txt_file(
+        result, directory, speaker_detection, maxqda=True, timestamps=True, brackets=True
+    )
+    create_srt_file(result, directory, language)
 
 
-def create_json_file(result, file_id):
+def create_json_file(result, directory: Path):
     """Creates a JSON file for the transcription result."""
-    output_file_text = os.path.join(TRANSCRIPT_DIR, file_id, "transcription.json")
+    output_file_text = directory / "transcription.json"
     with open(output_file_text, "w", encoding="utf-8") as json_file:
         json.dump(result, json_file, ensure_ascii=False)
 
 
-def create_txt_file(result, file_id, speaker_detection, timestamps, maxqda, brackets=True):
+def create_txt_file(result, directory: Path, speaker_detection, timestamps, maxqda, brackets=True):
     """Creates a TXT file for the transcription result."""
     segments = result["segments"]
     match maxqda, timestamps, brackets:
@@ -60,10 +62,10 @@ def create_txt_file(result, file_id, speaker_detection, timestamps, maxqda, brac
             filename = "transcription_timestamps.txt"
         case False, False, _:
             filename = "transcription.txt"
-    file_path = os.path.join(TRANSCRIPT_DIR, file_id, filename)
+    file_path = directory / filename
     with open(file_path, "w", encoding="utf-8") as file:
         headline = (
-            f"Transcription for {file_id}"
+            f"Transcription for {directory.name}"
             + ("" if maxqda and speaker_detection else "\n")
             + ("" if speaker_detection else "\n")
         )
@@ -81,17 +83,19 @@ def create_txt_file(result, file_id, speaker_detection, timestamps, maxqda, brac
             file.write(text + (" " if maxqda else "\n"))
 
 
-def create_srt_file(result, file_id, language=None):
+def create_srt_file(result, directory: Path, language=None):
     """Creates a SRT file for the transcription result, following the Netflix subtitle guidelines."""
 
     document = srt_document(result["segments"], language)
-    file_path = os.path.join(TRANSCRIPT_DIR, file_id, "transcription.srt")
+    file_path = directory / "transcription.srt"
     with open(file_path, "w", encoding="utf-8") as srt_file:
         srt_file.write(document)
     issues = Counter(rule for rule, _ in netflix_issues(document, language))
     if issues:
         summary = ", ".join(f"{rule}: {count}" for rule, count in issues.items())
-        write_logfile(f"SRT cues outside the Netflix guidelines ({summary})", file_id)
+        make_logger(directory / LOG_FILENAME)(
+            f"SRT cues outside the Netflix guidelines ({summary})"
+        )
 
 
 def transform_speakers_results(diarization_segments):
@@ -104,10 +108,11 @@ def transform_speakers_results(diarization_segments):
     return diarize_df
 
 
-def create_metadata(settings: Settings, audio_duration: int):
-    """Creates metadata file for the transcription."""
+def create_metadata(settings: Settings, audio_duration: int, directory: Path | None = None):
+    """Creates metadata file for the transcription, by default in its archive folder."""
 
-    metadata_file_path = os.path.join(TRANSCRIPT_DIR, settings.file_id, METADATA_FILENAME)
+    directory = directory or Path(TRANSCRIPT_DIR) / settings.file_id
+    metadata_file_path = directory / METADATA_FILENAME
     metadata = {
         "file_id": settings.file_id,
         "filename": settings.file_name,
@@ -122,7 +127,7 @@ def create_metadata(settings: Settings, audio_duration: int):
     }
     with open(metadata_file_path, "w", encoding="utf-8") as metadata_file:
         yaml.dump(metadata, metadata_file)
-    write_logfile("Metadata created", settings.file_id)
+    make_logger(directory / LOG_FILENAME)("Metadata created")
 
 
 def write_logfile(message, file_id):
@@ -142,10 +147,10 @@ def make_logger(log_file: Path) -> Callable[[str], None]:
     return log
 
 
-def add_processing_time_to_metadata(file_id):
+def add_processing_time_to_metadata(directory: Path):
     """Adds processing time information to metadata."""
 
-    metadata_file_path = os.path.join(TRANSCRIPT_DIR, file_id, METADATA_FILENAME)
+    metadata_file_path = directory / METADATA_FILENAME
     with open(metadata_file_path, encoding="utf-8") as metadata_file:
         metadata = yaml.safe_load(metadata_file)
     timestamp = metadata["timestamp"]
@@ -173,31 +178,37 @@ def write_final_outputs(
     backend: str,
     work_log: Path | None = None,
     export_dir: Path | None = None,
+    directory: Path | None = None,
 ) -> list[str]:
-    """Write metadata, log and all output files into the archive folder of settings.file_id,
-    then the optional copy to export_dir/<file_id>. Returns warnings: a failed copy is
-    never an error, the result is in the archive anyway."""
+    """Write metadata, log and all output files into `directory` (its name is
+    settings.file_id; by default the archive folder), then the optional copy to
+    export_dir/<file_id>. Returns warnings: a failed copy is never an error, the result
+    is in the archive anyway."""
 
     file_id = settings.file_id
-    directory = Path(TRANSCRIPT_DIR) / file_id
+    directory = directory or Path(TRANSCRIPT_DIR) / file_id
+    directory.mkdir(parents=True, exist_ok=True)
+    log = make_logger(directory / LOG_FILENAME)
     if work_log is not None:
         shutil.copyfile(work_log, directory / LOG_FILENAME)
     if not (directory / METADATA_FILENAME).exists():
-        create_metadata(settings, audio_duration)
+        create_metadata(settings, audio_duration, directory)
     cues = finalize(transcript, backend)
     language = transcript.get("language", settings.language)
-    create_output_files(cues, settings.speaker_detection, file_id, language)
-    write_logfile("Created output files", file_id)
-    add_processing_time_to_metadata(file_id)
-    write_logfile("Processing time added to metadata", file_id)
+    create_output_files(cues, settings.speaker_detection, directory, language)
+    log("Created output files")
+    add_processing_time_to_metadata(directory)
+    log("Processing time added to metadata")
     if export_dir is None:
         return []
     target = Path(export_dir) / file_id
     try:
-        shutil.copytree(directory, target, dirs_exist_ok=True)
+        shutil.copytree(
+            directory, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns(".pending")
+        )
     except OSError as e:
         warning = f"Copy to {target} failed: {e}"
-        write_logfile(warning, file_id)
+        log(warning)
         return [warning]
     return []
 

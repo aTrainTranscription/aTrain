@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from aTrain_core import engine
+from aTrain_core import engine, runner
 from aTrain_core.backends import crisper_transformers
 from aTrain_core.backends.common import group_word_segments
 from aTrain_core.outputs import finalize
@@ -146,3 +146,15 @@ def test_decode_reports_invalid_file(tmp_path):
     with pytest.raises(Exception, match="Check file & path"):
         engine.decode(tmp_path / "missing.mp3", log.append)
     assert log[0].startswith("File or path invalid")
+
+
+def test_sent_transcription_progress_never_exceeds_the_total():
+    sent = []
+    channel = SimpleNamespace(send=sent.append)
+    progress = runner.EventProgress(channel, "a", interval=0)  # send every change
+    segments = [SimpleNamespace(end=30.7), SimpleNamespace(end=61.4)]
+
+    engine.transcription_with_progress_bar(segments, SimpleNamespace(duration=197.5), progress)
+
+    assert sent and all(e.current <= e.total for e in sent)
+    assert (sent[-1].current, sent[-1].total) == (61.4, 197.5)
