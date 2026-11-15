@@ -2,8 +2,8 @@
 
 Renders the real transcription page and drives a transcription through the
 upload staging and queue APIs (stage_upload -> start_paths -> phase children
--> "Done" in the queue list), with the tiny model on CPU. The button wiring is
-covered separately in test_transcribe_queue.py.
+-> "Done" in the queue list), with the tiny model on CPU. Upload-handler and
+button wiring are covered separately in test_transcribe_queue.py.
 """
 
 from pathlib import Path
@@ -46,21 +46,23 @@ async def test_transcribe_through_ui(user: User):
     # directly to force the cheap path (tiny model, CPU) over the UI default.
     app.storage.general.update(CHEAP_SETTINGS)
     # stage_upload is exactly what the upload handler calls. Build a *real*
-    # UploadEventArguments rather than a stand-in: a hand-rolled double
+    # MultiUploadEventArguments rather than a stand-in: a hand-rolled double
     # freezes whatever attribute names NiceGUI happened to use when it was
     # written, so an upload-API change (2.x `.name`/`.content` -> 3.x `.file`)
     # slips through green. sender/client are unused by the handler.
-    upload_event = events.UploadEventArguments(
+    upload_event = events.MultiUploadEventArguments(
         sender=cast(object, None),  # type: ignore[arg-type]
         client=cast(object, None),  # type: ignore[arg-type]
-        file=ui.upload.SmallFileUpload(
-            name="sample_short.mp3",
-            content_type="audio/mpeg",
-            _data=FIXTURE.read_bytes(),
-        ),
+        files=[
+            ui.upload.SmallFileUpload(
+                name="sample_short.mp3",
+                content_type="audio/mpeg",
+                _data=FIXTURE.read_bytes(),
+            )
+        ],
     )
     with user:
-        assert await start_paths([await stage_upload(upload_event.file)])
+        assert await start_paths([await stage_upload(file) for file in upload_event.files])
     await user.open("/")
     await user.should_see("Done", retries=600)
 

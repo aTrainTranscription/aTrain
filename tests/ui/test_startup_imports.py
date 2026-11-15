@@ -27,6 +27,7 @@ STARTUP_MODULES = [
     "aTrain.components.settings.model",
     "aTrain.components.settings.language",
     "aTrain.components.settings.speakers",
+    "aTrain.utils.file_selection",
 ]
 
 PROBE = """

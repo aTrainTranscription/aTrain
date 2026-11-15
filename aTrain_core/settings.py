@@ -75,12 +75,14 @@ def load_formats() -> list:
     return file_formats
 
 
+def allowed_extensions() -> set[str]:
+    """The file extensions that can be transcribed, in lower case."""
+    return {extension.lower() for extension in load_formats()}
+
+
 def check_file(filename):
     """Check if the provided file is in a correct format for transcription."""
-    file_extension = os.path.splitext(filename)[-1]
-    file_extension_lower = str(file_extension).lower()
-    correct_file_formats = load_formats()
-    return file_extension_lower in correct_file_formats
+    return str(os.path.splitext(filename)[-1]).lower() in allowed_extensions()
 
 
 def check_device(device):
