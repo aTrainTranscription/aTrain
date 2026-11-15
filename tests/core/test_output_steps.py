@@ -120,6 +120,8 @@ def test_write_final_outputs_keeps_existing_metadata(archive):
 
 def test_write_final_outputs_export_copy(archive, tmp_path):
     file_id = outputs.claim_file_id(Path("interview.mp3"), "2026-09-30 14-05-12", archive)
+    (archive / file_id / ".pending").mkdir()
+    (archive / file_id / ".pending" / "work.log").write_text("temporary")
     export_dir = tmp_path / "Interviews" / "transcriptions"
     outputs.write_final_outputs(
         make_settings(file_id, False),
@@ -129,6 +131,7 @@ def test_write_final_outputs_export_copy(archive, tmp_path):
         export_dir=export_dir,
     )
     assert {p.name for p in (export_dir / file_id).iterdir()} >= OUTPUT_FILES
+    assert not (export_dir / file_id / ".pending").exists()
 
 
 def test_write_final_outputs_failed_copy_is_a_warning(archive, tmp_path):
