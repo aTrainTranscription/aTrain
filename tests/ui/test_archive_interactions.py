@@ -11,8 +11,11 @@ from unittest.mock import Mock
 import aTrain_core.globals as core_globals
 import pytest
 from aTrain.utils import archive as archive_utils
+from aTrain.utils import queue_ui
+from aTrain_core.jobs import JobStatus, QueueLockedError
 from nicegui import app
 from nicegui.testing import User
+from tests.unit.test_jobs import make_spec
 
 
 @pytest.fixture
@@ -158,10 +161,57 @@ async def test_archive_delete_all_dialog_confirm_clears_directory(user: User, ar
     await user.should_see("Delete All", retries=100)
     user.find("Delete All").click()  # opens dialog_delete
     await user.should_see("Are you sure you want to delete all transcriptions?")
+    await user.should_see(
+        "This also stops all unfinished jobs and deletes the queue and its temporary files."
+    )
     user.find("Confirm").click()
+    await user.should_not_see("Are you sure you want to delete all transcriptions?")
     # delete("all") removed everything and recreated the empty root.
     assert archive_root.exists()
     assert list(archive_root.iterdir()) == []
+
+
+async def test_delete_all_clears_queue_uploads_and_pending_files(
+    user: User, archive_root, tmp_path
+):
+    service = await queue_ui.get_queue_service()
+    service.pause()
+    source = tmp_path / "original.mp3"
+    source.write_bytes(b"audio")
+    staged = service.store.uploads_root / "upload" / "uploaded.mp3"
+    staged.parent.mkdir(parents=True)
+    staged.write_bytes(b"uploaded audio")
+    service.enqueue([make_spec(id="native", source=source), make_spec(id="upload", source=staged)])
+    service.store.update("upload", status=JobStatus.FAILED)
+    (service.store.work_dir("upload") / "raw_transcript.json").write_text("checkpoint")
+    (service.store.uploads_root / "unsubmitted").mkdir()
+    _seed(archive_root, "finished")
+    await user.open("/archive")
+
+    user.find("Delete All").click()
+    await user.should_see("Are you sure you want to delete all transcriptions?")
+    user.find("Confirm").click()
+    await user.should_not_see("Are you sure you want to delete all transcriptions?")
+
+    assert service.jobs() == []
+    assert list(archive_root.iterdir()) == []
+    assert source.read_bytes() == b"audio"
+    assert service.paused  # preserve the user's pause setting
+
+
+async def test_delete_all_keeps_files_when_queue_is_locked(monkeypatch, user: User, archive_root):
+    async def locked():
+        raise QueueLockedError("Another instance is transcribing")
+
+    monkeypatch.setattr(queue_ui, "get_queue_service", locked)
+    _seed(archive_root, "finished")
+    await user.open("/archive")
+    user.find("Delete All").click()
+    await user.should_see("Are you sure you want to delete all transcriptions?")
+    user.find("Confirm").click()
+
+    await user.should_see("Could not delete all transcriptions: Another instance is transcribing")
+    assert (archive_root / "finished").exists()
 
 
 async def test_archive_delete_all_dialog_cancel_keeps_transcriptions(user: User, archive_root):

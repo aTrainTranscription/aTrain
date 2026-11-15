@@ -21,12 +21,12 @@ import pytest
 # the first window can appear. The splash itself is excluded: it is the thing
 # that loads torch on purpose.
 STARTUP_MODULES = [
+    "aTrain.components.queue_status",
     "aTrain.components.settings.advanced",
     "aTrain.components.settings.file",
     "aTrain.components.settings.model",
     "aTrain.components.settings.language",
-    "aTrain.components.settings.speaker_detection",
-    "aTrain.components.settings.speaker_count",
+    "aTrain.components.settings.speakers",
 ]
 
 PROBE = """
