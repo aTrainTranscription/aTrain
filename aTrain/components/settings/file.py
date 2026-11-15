@@ -41,12 +41,17 @@ def input_file(on_change) -> FileSelection:
         "dragleave",
         js_handler=f"(e) => {{ if (e.currentTarget.contains(e.relatedTarget)) return; {DRAG_END} }}",
     )
-    # A browser hands over the files.
+    # A browser hands over the files. WebKitGTK (Linux window) doesn't: there the window
+    # process sends their paths (aTrain.utils.linux_drop), read like picked files.
     zone.on(
         "drop",
         js_handler=f"(e) => {{ e.preventDefault(); {DRAG_END} "
         f"if (e.dataTransfer.files.length) {qref}.addFiles(e.dataTransfer.files); }}",
     )
+    if portal and ui.context.client.ip in ("127.0.0.1", "::1"):  # not a browser on the network
+        from aTrain.utils.linux_drop import EVENT
+
+        ui.on(EVENT, selection.add_dropped)
     zone.mark("drop_zone")
 
     @ui.refreshable

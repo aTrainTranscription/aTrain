@@ -2,18 +2,20 @@
 QueueService on a temporary store (it never starts a child)."""
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import aTrain_core.transcribe  # noqa: F401  pre-import so the splash import is instant
 import pytest
 from aTrain.components.settings import file as file_component
 from aTrain.components.settings import model as model_component
-from aTrain.utils import file_selection, queue_ui, transcription
-from aTrain.utils.file_selection import FileSelection, ignored_files
+from aTrain.utils import file_selection, flatpak_portal, queue_ui, transcription
+from aTrain.utils.file_selection import FileSelection, check_dropped, ignored_files
+from aTrain.utils.linux_drop import EVENT
 from aTrain_core.jobs import JobStatus, JobStore, QueueLockedError
 from aTrain_core.queue_service import QueueService
 from aTrain_core.settings import ComputeType, Device
-from nicegui import ElementFilter, app, ui
+from nicegui import Client, ElementFilter, app, ui
 from nicegui.testing import User
 from nicegui.testing.user_interaction import UserInteraction
 from tests.unit.test_jobs import make_spec
@@ -372,6 +374,92 @@ async def test_export_warning_is_shown(service, tmp_path, user: User):
 
 
 # --- adding files (the code behind the page) ------------------------------------------
+
+
+def test_check_dropped(tmp_path):
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    for path in (tmp_path / "a.mp3", tmp_path / "notes.txt", folder / "b.wav"):
+        path.write_bytes(b"x")
+
+    files, unreadable, unsupported = check_dropped(
+        [tmp_path / "a.mp3", tmp_path / "notes.txt", folder, tmp_path / "gone.mp3"]
+    )
+
+    assert files == [tmp_path / "a.mp3", folder / "b.wav"]
+    assert unreadable == [tmp_path / "gone.mp3"]  # e.g. outside a Flatpak's sandbox
+    assert unsupported == ["notes.txt"]
+
+
+def drop(user: User, paths) -> None:
+    """What the Linux window process sends for a drop (aTrain.utils.linux_drop)."""
+    UserInteraction(user, {user.client.layout}, None).trigger(EVENT, [str(p) for p in paths])
+
+
+@pytest.fixture
+def desktop(monkeypatch):
+    """A native window on Linux, where drops come from the window process."""
+    window = SimpleNamespace(signal_server_shutdown=lambda: None)
+    monkeypatch.setattr(app.native, "main_window", window)
+    monkeypatch.setattr(file_component, "LINUX", True)
+
+
+async def test_dropped_files_are_added_in_the_desktop_app(
+    service, desktop, selections, tmp_path, user: User
+):
+    for name in ("a.mp3", "b.mp3"):
+        (tmp_path / name).write_bytes(b"audio")
+    await open_page(user)
+
+    drop(user, [tmp_path / "a.mp3", tmp_path / "b.mp3", Path("/gone.mp3")])
+
+    expected = [tmp_path / "a.mp3", tmp_path / "b.mp3"]
+    await until(lambda: selections[-1].paths == expected)
+    await user.should_see("2 files selected")
+    await user.should_see("aTrain can't open gone.mp3.")
+
+
+async def test_an_unreadable_drop_in_a_flatpak_opens_the_chooser_there(
+    service, desktop, selections, tmp_path, user: User, monkeypatch
+):
+    calls = []
+    granted = tmp_path / "doc" / "a.mp3"
+
+    def pick_native(directory, folder=None):
+        calls.append((directory, folder))
+        return [str(granted)]
+
+    monkeypatch.setattr(file_selection, "FLATPAK", True)
+    monkeypatch.setattr(flatpak_portal, "pick_native", pick_native)
+    await open_page(user)
+
+    drop(user, [Path("/home/me/Downloads/a.mp3")])  # a drag without the portal
+
+    await user.should_see("Select a.mp3 to give aTrain access to it.")
+    await until(lambda: selections[-1].paths == [granted])
+    assert calls == [(False, Path("/home/me/Downloads"))]
+
+
+async def test_drops_are_ignored_in_a_browser(service, selections, tmp_path, user: User):
+    (tmp_path / "a.mp3").write_bytes(b"audio")
+    await open_page(user)
+
+    drop(user, [tmp_path / "a.mp3"])
+
+    assert selections[-1].names == []  # paths on the browser's computer
+
+
+async def test_drops_are_ignored_from_another_machine(
+    service, desktop, selections, tmp_path, user: User, monkeypatch
+):
+    (tmp_path / "a.mp3").write_bytes(b"audio")
+    monkeypatch.setattr(Client, "ip", property(lambda self: "192.168.1.20"))  # --host 0.0.0.0
+    await open_page(user)
+
+    drop(user, [tmp_path / "a.mp3"])
+    await asyncio.sleep(0.5)
+
+    assert selections[-1].names == []  # paths on the server, named by a remote browser
 
 
 async def test_selection_stays_when_the_jobs_cant_be_added(
