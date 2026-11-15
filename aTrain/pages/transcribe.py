@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from aTrain.components.queue_status import queue_status
 from aTrain.components.settings.advanced import seed_defaults
 from aTrain.components.settings.file import input_file
@@ -8,9 +6,7 @@ from aTrain.components.settings.model import input_model
 from aTrain.components.settings.speakers import input_speakers
 from aTrain.components.splash_screen import splash_screen
 from aTrain.layouts.base import base_layout
-from aTrain.utils.transcription import stage_upload, start_paths
-from aTrain_core.globals import FLATPAK, LINUX, MACOS
-from nicegui import Client, app, ui
+from nicegui import Client, ui
 
 
 @ui.page("/")
@@ -20,7 +16,7 @@ async def page(client: Client):
         return
     await splash_screen()
     if client.is_deleted:
-        return
+        return  # the window loaded the page again while the splash screen was waiting
     # Imported here: it loads the engine modules (the splash screen has loaded torch by now).
     from aTrain.utils import queue_ui
     from aTrain_core.jobs import QueueLockedError
@@ -34,47 +30,28 @@ async def page(client: Client):
     with base_layout():
         if locked:
             ui.label(queue_ui.LOCKED_TEXT).classes("w-full p-3 bg-amber-100 text-dark rounded")
+
+        def update_add():
+            count = len(files.names)
+            if service is None or service.jobs():
+                add.text = f"Add {count} files to queue" if count > 1 else "Add to queue"
+            else:  # nothing in the queue yet
+                add.text = f"Transcribe {count} files" if count > 1 else "Transcribe"
+            add.set_enabled(bool(count) and not files.uploading and not locked)
+
+        async def add_to_queue():
+            await files.submit()
+            open_list()
+
         with ui.element("div").classes(
-            "w-full h-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
+            "w-full grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_300px] gap-8"
         ):
-            file = input_file()
-            input_model()
-            input_language()
-            input_speakers()
-        ui.separator().classes("mt-4")
-        with ui.row().classes("w-full justify-end items-center"):
-
-            def update_add():
-                add.text = "Add to queue" if service is None or service.jobs() else "Transcribe"
-
-            async def added(path: Path) -> bool:
-                ok = await start_paths([path])
-                if ok:
-                    update_add()
-                    open_list()
-                return ok
-
-            if (FLATPAK or LINUX or MACOS) and app.native.main_window is not None:
-
-                async def start_from_selected():
-                    if not getattr(file, "selected_path", None):
-                        ui.notify("Please select a file first", color="negative")
-                        return
-                    await added(Path(file.selected_path))
-
-                add = ui.button(on_click=start_from_selected, color="dark")
-            else:
-                add = ui.button(on_click=file.upload, color="dark")
-            add.props("no-caps unelevated").mark("add_to_queue")
-            add.set_enabled(not locked)
-            update_add()
+            files = input_file(on_change=lambda: update_add())
+            with ui.column().classes("w-full gap-3.5"):
+                input_model()
+                input_language()
+                input_speakers()
+                add = ui.button("Add to queue", on_click=add_to_queue, color="dark")
+                add.props("no-caps unelevated").classes("w-full h-11 mt-1").mark("add_to_queue")
+        update_add()
         open_list = queue_status(service) if not locked else lambda: None
-
-    if not (FLATPAK or LINUX or MACOS) or app.native.main_window is None:
-
-        async def add_upload(e):
-            if await added(await stage_upload(e.file)):
-                file.reset()
-                file.set_select()
-
-        file.on_upload(add_upload)
