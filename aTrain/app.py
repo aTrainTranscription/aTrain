@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from typing import Annotated, cast
 
-from aTrain_core.globals import ATRAIN_DIR, FLATPAK, REQUIRED_MODELS
+from aTrain_core.globals import ATRAIN_DIR, FLATPAK, LINUX, REQUIRED_MODELS
 from aTrain_core.load_resources import get_model
 from typer import Option, Typer
 
@@ -90,6 +90,12 @@ def start(
             host=host,
             port=port,
         )
+
+    if native and LINUX:
+        from aTrain.utils import linux_drop
+
+        # runs in the window process: file drops reach the page there (see linux_drop)
+        app.native.start_args["func"] = linux_drop.start
 
     # Without --host, aTrain binds to 127.0.0.1 in both modes. Pass --host, for
     # example 0.0.0.0, to serve on the network (#300).

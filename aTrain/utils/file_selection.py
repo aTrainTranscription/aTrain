@@ -1,18 +1,21 @@
 """The files picked or dropped for the next jobs, behind the drop zone of the transcribe page."""
 
+import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
 
+from aTrain.utils import flatpak_portal
 from aTrain.utils.flatpak_portal import pick_native
-from aTrain_core.settings import load_formats
+from aTrain_core.globals import FLATPAK
+from aTrain_core.settings import allowed_extensions, load_formats
 from nicegui import app, events, run, ui
 
 
 class FileSelection:
-    """The files for the next jobs, as paths: picked, a folder, or browser files,
-    which the hidden uploader uploads into the queue's upload folder as soon as they are
-    added. `native`: a desktop window, whose dialogs give paths
+    """The files for the next jobs, as paths: picked, a folder, dropped in the Linux window,
+    or browser files, which the hidden uploader uploads into the queue's upload folder as
+    soon as they are added. `native`: a desktop window, whose dialogs give paths
     (`portal`: through the desktop portal, in the Linux window)."""
 
     def __init__(self, uploader: ui.upload, native: bool, portal: bool):
@@ -110,6 +113,25 @@ class FileSelection:
         self.uploading = False
         self.on_change()
 
+    async def add_dropped(self, event: events.GenericEventArguments) -> None:
+        """The paths of a drop in the Linux window (see aTrain.utils.linux_drop)."""
+        files, unreadable, unsupported = check_dropped([Path(p) for p in event.args])
+        if unsupported:
+            ui.notify("Only audio and video files can be added")
+        if files:
+            self.add_paths(files)
+        if not unreadable:
+            return
+        if not FLATPAK:
+            names = ", ".join(path.name for path in unreadable)
+            ui.notify(f"aTrain can't open {names}.", color="negative", multi_line=True)
+            return
+        picked, folder = await flatpak_portal.choose_dropped(unreadable[0])
+        if folder:
+            self.add_folder(picked[0] if picked else None)
+        else:
+            self.add_paths([Path(p) for p in picked])
+
     # --- adding the jobs ----------------------------------------------------------------
 
     async def submit(self) -> None:
@@ -120,6 +142,25 @@ class FileSelection:
             # the uploaded files now belong to their jobs
             self.paths, self.uploads, self.folder = [], set(), None
             self.on_change()
+
+
+def check_dropped(paths: list[Path]) -> tuple[list[Path], list[Path], list[str]]:
+    """The media files among dropped paths (a folder adds its media files), the paths that
+    can't be read (outside a Flatpak's sandbox) and the names of other files."""
+    from aTrain_core.discovery import discover_media_files
+
+    allowed = allowed_extensions()
+    files, unreadable, unsupported = [], [], []
+    for path in paths:
+        if path.suffix and path.suffix.lower() not in allowed and not path.is_dir():
+            unsupported.append(path.name)
+        elif not os.access(path, os.R_OK):
+            unreadable.append(path)  # a media file, or (no extension) likely a folder
+        elif path.is_dir():
+            files += discover_media_files(path)
+        else:
+            files.append(path)
+    return files, unreadable, unsupported
 
 
 def ignored_files(folder: Path, files: list[Path]) -> int:
