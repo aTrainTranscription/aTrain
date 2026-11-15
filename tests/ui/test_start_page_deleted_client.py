@@ -11,6 +11,9 @@ def transcribe():
 
     yield transcribe
     sys.modules.pop("aTrain.pages.transcribe", None)
+    # `from aTrain.pages import transcribe` would reuse this attribute, and so skip the
+    # fresh import that registers the page route for the next test
+    vars(sys.modules["aTrain.pages"]).pop("transcribe", None)
 
 
 class DeletedClient:

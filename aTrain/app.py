@@ -1,3 +1,4 @@
+import importlib
 import os
 import sys
 from pathlib import Path
@@ -54,7 +55,7 @@ def start(
             user_config_path() / "aTrain" if FLATPAK else (ATRAIN_DIR / "settings")
         )
         with patch.dict(os.environ, NICEGUI_STORAGE_PATH=str(nicegui_storage_path)):
-            from nicegui import run, ui
+            from nicegui import app, background_tasks, run, ui
 
             from aTrain.pages import about, advanced, archive, faq, models, transcribe  # noqa
         from wakepy import keep
@@ -65,6 +66,13 @@ def start(
         )
 
     print("Running aTrain")
+
+    async def start_queue():
+        # In a thread: queue_ui loads the engine modules. Jobs of an earlier session continue.
+        queue_ui = await run.io_bound(importlib.import_module, "aTrain.utils.queue_ui")
+        await queue_ui.start_queue_service()
+
+    app.on_startup(lambda: background_tasks.create(start_queue(), name="start queue"))
 
     def ui_run(native: bool, reload: bool, show: bool, host: str, port: int):
         # A worker pool forked from the running server stops all page updates

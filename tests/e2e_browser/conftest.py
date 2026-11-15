@@ -28,10 +28,14 @@ BOOT_TIMEOUT_S = 90
 
 
 @pytest.fixture(scope="session")
-def atrain_server() -> Generator[str, None, None]:
+def atrain_server(tmp_path_factory) -> Generator[str, None, None]:
     # WAKEPY_FAKE_SUCCESS mirrors tests/ui/test_boot_serve.py - wakepy has no
     # backend on headless CI and raises without it.
-    env = {**os.environ, "WAKEPY_FAKE_SUCCESS": "1"}
+    env = {
+        **os.environ,
+        "WAKEPY_FAKE_SUCCESS": "1",
+        "ATRAIN_USER_DIR": str(tmp_path_factory.mktemp("atrain")),
+    }
     # The subprocess must not look like it runs inside pytest: nicegui>=3's
     # ui.run sees PYTEST_CURRENT_TEST and then requires the screen-test port.
     env.pop("PYTEST_CURRENT_TEST", None)

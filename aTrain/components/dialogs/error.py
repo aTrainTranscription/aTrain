@@ -7,8 +7,9 @@ from nicegui import ui
 GIF_ERROR = cast(Path, files("aTrain") / "static" / "images" / "warning.gif")
 
 
-def dialog_error(error: str, traceback: str):
-    with ui.dialog(value=True).props("persistent"), ui.card() as card:
+def dialog_error(error: str, traceback: str, on_retry=None):
+    """`on_retry`: also offer "Retry", which closes the dialog and calls it."""
+    with ui.dialog(value=True).props("persistent") as dialog, ui.card() as card:
         card.classes("w-[500px] p-8 gap-3")
         ui.label("We encountered an error!").classes("font-bold text-dark text-lg")
         ui.separator()
@@ -24,6 +25,10 @@ def dialog_error(error: str, traceback: str):
         with ui.row().classes("justify-between w-full items-center"):
             btn_copy = ui.button("Copy Error", color="gray-200", icon="content_copy")
             btn_copy.props("unelevated no-caps text-color=dark size=0.8rem")
+            if on_retry is not None:
+                btn_retry = ui.button("Retry", color="gray-200", icon="replay")
+                btn_retry.props("unelevated no-caps text-color=dark size=0.8rem")
+                btn_retry.on_click(lambda: (dialog.close(), on_retry()))
             btn_exit = ui.button("Exit", color="dark")
             btn_exit.props("unelevated no-caps")
         btn_copy.on_click(lambda: copy_error(error, traceback))

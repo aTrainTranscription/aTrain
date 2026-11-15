@@ -20,11 +20,11 @@ URL = "http://127.0.0.1:8080"
 BOOT_TIMEOUT_S = 90  # generous; the server comes up in ~5-7 s locally
 
 
-def test_app_boots_and_serves():
+def test_app_boots_and_serves(tmp_path):
     # `aTrain start` wraps the server in wakepy's `keep.running()`, which raises
     # on headless CI with no wakelock backend. WAKEPY_FAKE_SUCCESS is wakepy's
     # documented escape hatch for exactly this (CI / no D-Bus).
-    env = {**os.environ, "WAKEPY_FAKE_SUCCESS": "1"}
+    env = {**os.environ, "WAKEPY_FAKE_SUCCESS": "1", "ATRAIN_USER_DIR": str(tmp_path)}
     # The subprocess must not look like it runs inside pytest: nicegui>=3's
     # ui.run sees PYTEST_CURRENT_TEST and then requires the screen-test port.
     env.pop("PYTEST_CURRENT_TEST", None)

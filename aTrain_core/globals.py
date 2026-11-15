@@ -110,6 +110,12 @@ def claim_file_id(file_path, timestamp, transcript_root=TRANSCRIPT_DIR) -> str:
             file_id = f"{base_file_id}-{suffix}"
 
 
+def hms(seconds: float) -> str:
+    """Seconds as hh:mm:ss; hours may exceed 24."""
+    seconds = int(seconds)
+    return f"{seconds // 3600:02}:{seconds % 3600 // 60:02}:{seconds % 60:02}"
+
+
 def write_json_atomic(path: Path, data: Any, **dump_options) -> None:
     """Write `data` so a reader sees the old file or the complete new one, also after a crash."""
     path.parent.mkdir(parents=True, exist_ok=True)

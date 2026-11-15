@@ -9,6 +9,9 @@ This page covers the two official channels, the MSIX package on Windows and
 the Flatpak on Linux. Each section starts with the normal user path and
 continues with the commands for administrators.
 
+Close aTrain before deleting data folders manually, so queued jobs cannot
+recreate them.
+
 ## Windows (MSIX, Store or downloaded package)
 
 | Location                                            | Contents                                                | Removed by uninstall | Personal data |
@@ -18,6 +21,7 @@ continues with the commands for administrators.
 | Start menu entry "aTrain"                           |                                                         | yes                  |               |
 | `%USERPROFILE%\Documents\aTrain\models\`            | downloaded models, several GB                           | no                   | no            |
 | `%USERPROFILE%\Documents\aTrain\transcriptions\`    | one folder per transcription: text, `metadata.txt`, `log.txt` | no             | **yes**       |
+| `%USERPROFILE%\Documents\aTrain\queue\`             | saved jobs, source paths and processing options          | no                   | **yes**       |
 | `%USERPROFILE%\Documents\aTrain\settings\`          | the options last used in the app                        | no                   | no            |
 
 `Documents\aTrain` moves to the path in the `ATRAIN_USER_DIR` environment
@@ -93,6 +97,7 @@ lives there.
 | `~/.var/app/io.github.juergenfleiss.aTrain/config/aTrain/`    | the options last used in the app  | with `--delete-data` | no            |
 | `~/.var/app/io.github.juergenfleiss.aTrain/cache/`            | library caches and temp files; harmless | with `--delete-data` | no      |
 | `~/Documents/aTrain/transcriptions/`                          | one folder per transcription: text, `metadata.txt`, `log.txt` | no | **yes** |
+| `~/Documents/aTrain/queue/`                                   | saved jobs, source paths and processing options | no | **yes** |
 
 The sandbox has access to `~/Documents` only, which is why the transcripts sit
 outside `~/.var/app`. Starting the app with `--transcription-dir <path>` moves
@@ -117,14 +122,21 @@ rm -rf ~/Documents/aTrain
 
 - **Transcriptions** are personal data: the text of the recording, speaker
   labels, `metadata.txt` with the original file name and the options used, and
-  `log.txt`. The recordings themselves are not stored; aTrain reads them from
-  where you selected them. Delete the `transcriptions` folder when a machine is
-  decommissioned or a user leaves. From inside the app, the **Delete All**
-  button in the Archive tab does the same for the current profile; models and
-  settings stay.
+  `log.txt`. Original recordings remain where you selected them.
+- **Pending files** are personal data in
+  `transcriptions/<output-folder>/.pending/`: browser uploads,
+  transcript checkpoints and logs, with unsubmitted uploads in the hidden
+  `transcriptions/.uploads/` folder. Successful jobs remove their `.pending`
+  folder; failed or cancelled jobs keep it for retry.
+- **Queue data** in `queue/queue.json` includes source paths, processing
+  options and job status. It remains after uninstalling.
 - **Models** are large but contain no personal data. They can also be removed
   one by one on the Models page of the app.
 - **Settings** hold the options last used in the app.
+
+The Archive tab's **Delete All** stops unfinished jobs, clears the queue and
+deletes all transcripts and pending files for the current profile. Models,
+settings and original recordings stay.
 
 Secure erasure and encryption at rest are matters of the operating system, not
 of aTrain.

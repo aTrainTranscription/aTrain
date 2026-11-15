@@ -35,7 +35,7 @@ def macos_window(monkeypatch) -> Mock:
 
 async def test_select_file_opens_the_native_dialog_on_macos(macos_window, user: User):
     await user.open("/")
-    await user.should_see("Start", retries=100)
+    await user.should_see(marker="add_to_queue", retries=100)
 
     user.find(kind=ui.button, content="Select File").click()
 
