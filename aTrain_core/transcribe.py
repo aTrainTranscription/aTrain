@@ -1,5 +1,6 @@
 import os
 import warnings
+from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 from multiprocessing import Manager, Process
@@ -71,37 +72,20 @@ def load_audio(settings: Settings) -> tuple[np.ndarray, int]:
     return engine.decode(settings.file, partial(write_logfile, file_id=settings.file_id))
 
 
-def run_transcription(
-    settings: Settings,
-    model_path: Path,
-    audio_array: np.ndarray,
-    returnDict: DictProxy | dict = {},
-) -> dict | None:
+def run_transcription(settings: Settings, model_path: Path, audio_array: np.ndarray) -> dict:
     """Run a transcription through the backend selected by the model config."""
-    backend = None
-    try:
-        backend = engine.backend_of(settings.model)
-        key = ModelKey(settings.model, settings.device, settings.compute_type, settings.cpu_threads)
-        transcriber = engine.load_transcriber(key, model_path)
-        transcript = transcriber.transcribe(
-            audio_array,
-            language=settings.language,
-            initial_prompt=settings.initial_prompt,
-            temperature=settings.temperature,
-            progress=settings.progress,
-            log=partial(write_logfile, file_id=settings.file_id),
-        )
-        write_logfile("Transcription successful", settings.file_id)
-        if settings.device == Device.GPU or backend == "crisper-transformers":
-            returnDict["transcript"] = transcript
-        if settings.device == Device.CPU:
-            return transcript
-        os._exit(0)
-
-    except Exception as error:
-        if settings.device == Device.CPU and backend != "crisper-transformers":
-            raise error
-        returnDict["error"] = error
+    key = ModelKey(settings.model, settings.device, settings.compute_type, settings.cpu_threads)
+    transcriber = engine.load_transcriber(key, model_path)
+    transcript = transcriber.transcribe(
+        audio_array,
+        language=settings.language,
+        initial_prompt=settings.initial_prompt,
+        temperature=settings.temperature,
+        progress=settings.progress,
+        log=partial(write_logfile, file_id=settings.file_id),
+    )
+    write_logfile("Transcription successful", settings.file_id)
+    return transcript
 
 
 def run_transcription_in_process(
@@ -109,32 +93,62 @@ def run_transcription_in_process(
 ) -> dict:
     """Run a transcription in a seperate process.
     This is a workaround to deal with a termination issue: https://github.com/guillaumekln/faster-whisper/issues/71"""
+    return run_in_process(
+        run_transcription, settings=settings, model_path=model_path, audio_array=audio_array
+    )
+
+
+def run_in_process(target: Callable, **kwargs):
+    """Run target(**kwargs) in a child process and return its result.
+
+    The child exits once target returns, so every model it loaded and all GPU memory
+    it held, including the CUDA context that torch.cuda.empty_cache() cannot free,
+    is released by the operating system."""
     with Manager() as manager:
         returnDict = manager.dict()
         p = Process(
-            target=run_transcription,
-            kwargs={
-                "settings": settings,
-                "model_path": model_path,
-                "audio_array": audio_array,
-                "returnDict": returnDict,
-            },
+            target=_run_and_report,
+            args=(target, kwargs, returnDict),
             daemon=True,
         )
         p.start()
         p.join()
+        exitcode = p.exitcode
         p.close()
 
         if "error" in returnDict.keys():
             error: Exception = returnDict["error"]
             raise error
-        transcript = returnDict["transcript"]
-        return transcript
+        if "result" not in returnDict.keys():
+            raise RuntimeError(
+                f"{target.__name__} process ended unexpectedly (exit code {exitcode})"
+            )
+        return returnDict["result"]
+
+
+def _run_and_report(target: Callable, kwargs: dict, returnDict: DictProxy) -> None:
+    """Entry point of the child process started by run_in_process."""
+    try:
+        returnDict["result"] = target(**kwargs)
+    except Exception as error:
+        returnDict["error"] = error
+    # Skip interpreter shutdown, it can hang after a GPU run (see run_transcription_in_process)
+    os._exit(0)
 
 
 def run_speaker_detection(
     settings: Settings, audio_duration: int, audio_array: np.ndarray, transcript: dict
 ) -> dict:
+    """Run speaker detection, on GPU in a separate process so its memory is freed afterwards."""
+    if settings.device == Device.GPU:
+        write_logfile("Detecting speakers in seperate process", settings.file_id)
+        return run_in_process(
+            detect_speakers, settings=settings, audio_array=audio_array, transcript=transcript
+        )
+    return detect_speakers(settings, audio_array, transcript)
+
+
+def detect_speakers(settings: Settings, audio_array: np.ndarray, transcript: dict) -> dict:
     """Run speaker detection using a pyannote.audio model"""
     log = partial(write_logfile, file_id=settings.file_id)
     pipeline = engine.load_diarizer(settings.device, log)
