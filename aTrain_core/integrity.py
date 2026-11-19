@@ -20,6 +20,11 @@ from pathlib import Path
 
 CHUNK_SIZE = 1024 * 1024
 
+# find_missing_files() does not require these files. models.json lists
+# .gitattributes for every model, but no backend reads it and the tarballs of
+# the bundled models do not contain it (#335).
+OPTIONAL_FILES = {".gitattributes"}
+
 
 class ModelIntegrityError(Exception):
     """A model does not match the checksums pinned for it in models.json."""
@@ -37,13 +42,17 @@ def _file_hash(path: Path, algorithm: str) -> str:
 
 
 def find_missing_files(model_path: Path, manifest: dict[str, str]) -> list[str]:
-    """Names of manifest files that are not on disk.
+    """Names of manifest files that are not on disk, apart from OPTIONAL_FILES.
 
     Cheap enough to run on every load: a download that was interrupted leaves
     files missing rather than truncated, because huggingface_hub downloads to a
     temporary name and moves the file into place once it is complete.
     """
-    return sorted(name for name in manifest if not (model_path / name).is_file())
+    return sorted(
+        name
+        for name in manifest
+        if name not in OPTIONAL_FILES and not (model_path / name).is_file()
+    )
 
 
 def verify_model(model_path: Path, manifest: dict[str, str]) -> list[str]:

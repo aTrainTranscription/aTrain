@@ -49,7 +49,6 @@ def download_model(model_path: Path, model_info: dict, progress: DictProxy | Non
             repo_id=model_info["repo_id"],
             revision=model_info["revision"],
             local_dir=model_path,
-            local_dir_use_symlinks=False,
             max_workers=1,
         )
     finally:
