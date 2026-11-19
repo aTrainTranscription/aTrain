@@ -17,10 +17,21 @@ Every release is a git tag `v<version>` and a GitHub release built from it by
 | `checksums.txt` | GitHub release and Zenodo | SHA-256 of every file below, computed after signing. Both copies are identical. |
 | `aTrain-<version>-windows.cdx.json` | GitHub release | CycloneDX SBOM of the Windows build. |
 | `aTrain-<version>-source.tar.gz` | GitHub (tag archive) | Source at the tag; its hash is in `checksums.txt`. |
+| `aTrain-<version>-macos-arm64.dmg` | Zenodo | macOS disk image, Apple silicon, unsigned and not notarized. |
+| `checksums-macos.txt` | GitHub release and Zenodo | SHA-256 of the DMG and its SBOM. |
+| `aTrain-<version>-macos.cdx.json` | GitHub release and Zenodo | CycloneDX SBOM of the macOS build. |
 
-Do not take the installer from the workflow run under Actions: that artifact
-is the build before signing, and its hash is not the one in `checksums.txt`.
-The signed installer only exists on Zenodo.
+The `aTrain-macos-<version>` workflow artifact contains the same three macOS
+files.
+
+Under Actions, the `aTrain-msix-<version>` workflow artifact contains the
+unsigned build; its installer hash does not match the release's `checksums.txt`.
+The `signed-aTrain-<version>` workflow artifact contains the signed installer
+and is a temporary alternative download source to Zenodo. The repository's
+Actions artifact retention is set to 90 days, so GitHub automatically deletes
+the artifact 90 days after upload unless it is manually deleted sooner.
+Use Zenodo for long-term downloads. Verify either download against the
+checksums published on the GitHub release.
 
 ## 1. Compare the checksum
 
@@ -40,6 +51,17 @@ Linux/macOS:
 ```bash
 sha256sum -c checksums.txt --ignore-missing
 ```
+
+macOS (Apple silicon DMG): compare the hash of the disk image with the
+matching line in `checksums-macos.txt` from the GitHub release:
+
+```bash
+shasum -a 256 aTrain-<version>-macos-arm64.dmg
+```
+
+The macOS build is unsigned for now, so there is no signature to verify, and
+Gatekeeper blocks the first launch. Only after the checksum matches, open it
+through System Settings → Privacy & Security → Open Anyway.
 
 A mismatch means a corrupted download or a file that is not the released one.
 Do not install it; download again, then report if it persists (see below).

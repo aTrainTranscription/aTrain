@@ -11,7 +11,9 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     ports:
-      - "8080:8080"
+      # Only this machine can reach the container. aTrain listens on 0.0.0.0
+      # inside it, so the host and origin check is off.
+      - "127.0.0.1:8080:8080"
     volumes:
       # Bind mount: live source code editing from host
       - .:/workspace
@@ -31,7 +33,6 @@ services:
       # `docker compose exec atrain rm ...` or sudo. data/ is git- and
       # docker-ignored.
       - ./data:/root/.local/share/aTrain
-    command: python dev.py
     environment:
       # Prevents Python from buffering stdout/stderr (cleaner container logs)
       - PYTHONUNBUFFERED=1

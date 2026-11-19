@@ -1,9 +1,5 @@
 import pandas as pd
-from aTrain_core.backends.common import (
-    SRT_MAX_DURATION,
-    group_word_segments,
-    words_to_segments,
-)
+from aTrain_core.backends.common import group_word_segments, words_to_segments
 from aTrain_core.outputs import assign_word_speakers, smooth_speaker_flips
 
 
@@ -290,22 +286,22 @@ def test_tie_keeps_both_speakers():
     assert speakers(("well", 0.0, 0.2, "A"), ("go", 0.3, 0.5, "B")) == ["A", "B"]
 
 
-def test_subtitle_cap():
+def test_duration_cap():
     words = [(" w", float(i), float(i) + 0.9) for i in range(25)]
 
-    result = cues(*words, max_duration=SRT_MAX_DURATION)
+    result = cues(*words, max_duration=7.0)
 
     assert [c[1] for c in result] == [0.0, 7.0, 14.0, 21.0]
-    assert all(end - start <= SRT_MAX_DURATION for _, start, end in result)
+    assert all(end - start <= 7.0 for _, start, end in result)
 
 
-def test_subtitle_cap_keeps_sentence_split():
+def test_duration_cap_keeps_sentence_split():
     result = cues(
         (" This", 0.0, 1.0),
         (" is", 1.0, 2.0),
         (" long.", 2.0, 4.0),
         (" Next", 4.1, 5.0),
-        max_duration=SRT_MAX_DURATION,
+        max_duration=7.0,
     )
 
     assert result == [("This is long.", 0.0, 4.0), ("Next", 4.1, 5.0)]

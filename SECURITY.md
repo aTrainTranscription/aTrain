@@ -10,7 +10,7 @@ Old versions are available for download under https://business-analytics.uni-gra
 
 ## Reporting a Vulnerability
 
-Please contact us directly via [atrain@uni-graz](mailto:atrain@uni-graz) to report a vulnerability.
+Please contact us directly via [atrain@uni-graz.at](mailto:atrain@uni-graz.at) to report a vulnerability.
 Please add at least the following details:
 
 - name the subject "Security issue with aTrain"
@@ -23,3 +23,5 @@ Please add at least the following details:
 (adapted from https://github.com/openqda/openqda/edit/main/SECURITY.md)
 
 Release builds are code-signed; see the [Code signing policy](docs/code-signing-policy.md).
+
+Who can reach aTrain's local web server in each run mode and why encryption at rest is left to the operating system: [Deployment modes](docs/security/deployment-modes.md).

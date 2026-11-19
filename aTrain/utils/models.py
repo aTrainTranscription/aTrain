@@ -1,15 +1,15 @@
 import os
 import traceback
-import urllib.error
-import urllib.request
 from concurrent.futures.process import BrokenProcessPool
 from multiprocessing import Manager
 
 from aTrain.components.dialogs.download import close_dialog_download, dialog_download
 from aTrain.components.dialogs.error import dialog_error
 from aTrain_core.globals import MODELS_DIR, REQUIRED_MODELS_DIR
+from aTrain_core.integrity import find_missing_files
 from aTrain_core.load_resources import get_model, load_model_config_file, remove_model
 from aTrain_core.settings import load_languages
+from huggingface_hub.utils import get_session
 from nicegui import run, ui
 from nicegui.run import SubprocessException
 from nicegui.run import setup as setup_process_pool
@@ -30,27 +30,26 @@ def read_downloaded_models() -> list:
         all_file_directories.sort(reverse=True)
 
         for directory_name in all_file_directories:
-            directory_path = os.path.join(directory, directory_name)
-            for file in os.listdir(directory_path):
-                if file.endswith(".bin") and directory_name in list(models_config.keys()):
-                    all_downloaded_models.append(directory_name)
-                    break
-                if (
-                    file == "model.safetensors"
-                    and models_config.get(directory_name, {}).get("backend")
-                    == "crisper-transformers"
-                ):
-                    all_downloaded_models.append(directory_name)
-                    break
+            # A model counts as downloaded when find_missing_files() reports no
+            # missing file for its manifest in models.json. The check also covers
+            # files in subfolders (speaker-detection). get_model() runs the same
+            # check before every use.
+            manifest = models_config.get(directory_name, {}).get("files")
+            if manifest and not find_missing_files(directory / directory_name, manifest):
+                all_downloaded_models.append(directory_name)
 
     return all_downloaded_models
 
 
 def read_transcription_models() -> list:
-    all_models = read_downloaded_models()
-    while "diarize" in all_models:
-        all_models.remove("diarize")
-    return all_models
+    # Models of the pyannote backend (speaker-detection) are listed on the Models
+    # page but cannot transcribe.
+    models_config = load_model_config_file()
+    return [
+        model
+        for model in read_downloaded_models()
+        if models_config[model].get("backend") != "pyannote"
+    ]
 
 
 def read_model_metadata() -> list:
@@ -66,6 +65,12 @@ def read_model_metadata() -> list:
             "group": model_metadata[model].get("group", "All others"),
             "size": model_metadata[model]["repo_size_human"],
             "downloaded": model in downloaded_models,
+            # Only Hugging Face for now; an internal source (#322) goes here.
+            "source": "Hugging Face",
+            "source_url": (
+                f"https://huggingface.co/{model_metadata[model]['repo_id']}"
+                f"/tree/{model_metadata[model]['revision']}"
+            ),
         }
         if info := model_metadata[model].get("info"):
             model_info["info"] = info
@@ -87,6 +92,10 @@ def model_languages(model: str) -> dict:
 
 
 async def download_model(model: str):
+    # On failure, remove only a folder this download created and leave one that
+    # was there before, such as a model copied by hand (#334). get_model() itself
+    # discards a folder that fails its checksums after a download.
+    existed = (MODELS_DIR / model).exists()
     with Manager() as manager:
         progress = manager.dict({"current": 0, "total": 999999})
         dialog_download(progress, model)
@@ -97,18 +106,21 @@ async def download_model(model: str):
             ui.navigate.reload()
 
         except BrokenProcessPool:
-            remove_model(model)
+            if not existed:
+                remove_model(model)
             setup_process_pool()
             close_dialog_download()
             ui.navigate.reload()
 
         except SubprocessException as e:
-            remove_model(model)
+            if not existed:
+                remove_model(model)
             close_dialog_download()
             dialog_error(error=e.original_message, traceback=e.original_traceback)
 
         except Exception as e:
-            remove_model(model)
+            if not existed:
+                remove_model(model)
             close_dialog_download()
             dialog_error(str(e), traceback.format_exc())
 
@@ -116,8 +128,8 @@ async def download_model(model: str):
 def check_internet() -> None:
     """A function to check whether the user is connected to the internet."""
     try:
-        urllib.request.urlopen("https://huggingface.co", timeout=10)  # nosec B310 — hardcoded https URL, not user input
-    except urllib.error.URLError:
+        get_session().head("https://huggingface.co", timeout=10)
+    except Exception as e:
         raise ConnectionError(
-            "We cannot reach Hugging Face. Most likely you are not connected to the internet."
+            f"We cannot reach Hugging Face ({e}). Most likely you are not connected to the internet."
         )

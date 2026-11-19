@@ -15,6 +15,43 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+
+    steps:
+      - name: Checkout
+        # On pull_request the checkout is the PR merge commit, whose first
+        # parent is the base branch. Depth 2 is enough to diff against it.
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Detect docs-only changes
+        # The e2e jobs below take long and download models. A PR that only
+        # touches Markdown or docs/ cannot change their outcome, so they skip.
+        # Pushes to develop/main always run everything. A skipped job counts
+        # as passed for required status checks.
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Own command, so a failing diff fails the job instead of skipping.
+          files=$(git diff --name-only HEAD^1 HEAD)
+          code=$(echo "$files" | grep -vE '(\.md$|^docs/)' || true)
+          if [ -n "$code" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Docs-only change, skipping e2e jobs."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lint:
     name: ruff
     runs-on: ubuntu-latest
@@ -25,7 +62,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           # New uv.lock invalidates the cache automatically.
@@ -52,7 +89,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -74,7 +111,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -112,7 +149,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -143,6 +180,8 @@ jobs:
 
   e2e:
     name: e2e (core pipeline)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -151,7 +190,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -173,8 +212,47 @@ jobs:
       - name: Run transcription E2E smoke test
         run: .venv/bin/python -m pytest tests/core -v
 
+  e2e-crisper:
+    name: e2e (CrisperWhisper word timestamps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ATRAIN_TEST_CRISPER: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install aTrain engine deps (CPU torch) + pytest
+        # Constrain every dependency to uv.lock so CI tests the shipped versions.
+        # The locked Linux pin torch==2.9.1 also admits the +cpu build.
+        run: |
+          uv venv
+          uv export --locked --no-emit-project --no-hashes --no-dev \
+            --output-file "$RUNNER_TEMP/constraints.txt" > /dev/null
+          uv pip install \
+            . \
+            "torch==2.9.1+cpu" "torchaudio==2.9.1+cpu" pytest pytest-asyncio \
+            --constraint "$RUNNER_TEMP/constraints.txt" \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Check real CrisperWhisper transcription and attention outputs
+        env:
+          ATRAIN_USER_DIR: ${{ runner.temp }}/atrain-crisper
+          HF_HOME: ${{ runner.temp }}/crisper-hf
+        run: .venv/bin/python -m pytest tests/core/test_crisper_transformers_e2e.py -v
+
   e2e-app:
     name: e2e (app, full stack)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -190,7 +268,7 @@ jobs:
           sudo apt-get install -y libcairo2-dev libgirepository1.0-dev
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -215,6 +293,8 @@ jobs:
 
   e2e-browser:
     name: e2e (real browser, Chromium)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -231,7 +311,7 @@ jobs:
           sudo apt-get install -y libcairo2-dev libgirepository1.0-dev
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -267,7 +347,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -286,7 +366,12 @@ jobs:
         run: |
           uv venv
           uv pip install --no-deps .
-          uv pip install platformdirs pyyaml show-in-file-manager huggingface_hub pytest
+          # Exercise the shipped Hub API rather than whatever major version is
+          # latest on PyPI; constraints keep this install free of torch/GTK.
+          uv export --locked --no-emit-project --no-hashes --no-dev --extra gui \
+            --output-file "$RUNNER_TEMP/unit-constraints.txt" > /dev/null
+          uv pip install --constraint "$RUNNER_TEMP/unit-constraints.txt" \
+            platformdirs pyyaml show-in-file-manager huggingface_hub pytest
           # Pinned tools of .github/scripts/prepare-flatpak.py, as in flatpak.yml.
           uv pip install --group flatpak
 

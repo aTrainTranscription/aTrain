@@ -1,14 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
-# -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
-from importlib.resources import files
+import os
+import re
 
-icon_path = str(files("aTrain.static").joinpath("favicon"))
+# CI sets ATRAIN_VERSION (e.g. 1.5.0 or 0.0.0-test); fail loudly if it is missing
+version = os.environ["ATRAIN_VERSION"]
 
 datas = []
 datas += collect_data_files('aTrain')
-datas += [(str(files("speechbrain").joinpath("")),'speechbrain')]
 datas += collect_data_files('torch')
+datas += collect_data_files('nicegui')
 datas += collect_data_files('lightning')
 datas += collect_data_files('lightning_fabric')
 datas += collect_data_files('lightning_utilities')
@@ -32,11 +33,13 @@ datas += copy_metadata('pyannote.audio')
 datas += copy_metadata('huggingface-hub')
 datas += copy_metadata('pyyaml')
 datas += copy_metadata('pytorch_lightning')
-datas += copy_metadata('aTrain_core')
+# aTrain_core is not a separate distribution under the single-pyproject layout
+# (it ships inside the aTrain wheel), so copy_metadata('aTrain_core') would raise
+# PackageNotFoundError. Its data files are still bundled via collect_data_files
+# above; nothing reads aTrain_core's dist metadata at runtime.
 
-hiddenimports = ['pytorch_lightning','pyyaml','huggingface-hub','speechbrain','pyannote','pytorch','lightning']
+hiddenimports = ['pytorch_lightning','pyyaml','huggingface-hub','pyannote','pytorch','lightning']
 hiddenimports += collect_submodules('wakepy')
-hiddenimports += collect_submodules('speechbrain')
 hiddenimports += collect_submodules('pyannote')
 hiddenimports += collect_submodules('sklearn')
 
@@ -67,22 +70,21 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    console=True,
+    upx=False,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon=['aTrain/static/favicon.icns'],
-    plist='Info.plist'
 )
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='aTrain',
 )
@@ -91,4 +93,17 @@ app = BUNDLE(
     name='aTrain.app',
     icon='aTrain/static/favicon.icns',
     bundle_identifier='at.atrain.bandas',
+    version=version,
+    info_plist={
+        'CFBundleShortVersionString': version,
+        'CFBundleVersion': re.split('[-+]', version)[0],
+        'LSApplicationCategoryType': 'public.app-category.productivity',
+        'NSDocumentsFolderUsageDescription': 'aTrain requires access to your Documents folder to save and manage files.',
+        'NSFileAccessUsageDescription': 'aTrain needs access to specific folders for its functionality. Please grant this access in System Preferences > Security & Privacy > Privacy > Files and Folders.',
+        'ITSAppUsesNonExemptEncryption': False,
+        'LSMinimumSystemVersion': '14.0',
+        # App Nap throttles the app while its window is in the background (#307:
+        # 12 minutes instead of 22 s for a 12 s file, transcribing in a browser).
+        'LSAppNapIsDisabled': True,
+    },
 )
