@@ -5,8 +5,8 @@ from multiprocessing.managers import DictProxy
 from pathlib import Path
 from typing import cast
 
+from aTrain.utils.stop import stop_run
 from nicegui import ElementFilter, app, ui
-from nicegui.run import tear_down as stop_transcription
 
 GIF_PROCESS = cast(Path, files("aTrain") / "static" / "images" / "process.gif")
 
@@ -34,7 +34,7 @@ def dialog_process(progress: DictProxy):
                 )
                 ui.label("").bind_text_from(state, "time", lambda x: f"Time: {x}")
             btn_stop = ui.button("stop", color="dark").props("unelevated no-caps")
-        btn_stop.on_click(stop_transcription)
+        btn_stop.on_click(stop_run)
 
 
 def update_progress(progress: DictProxy, start_time: datetime):

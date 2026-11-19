@@ -1,3 +1,4 @@
+import asyncio
 import traceback
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
@@ -112,6 +113,15 @@ async def run_pipeline(payload: UploadPayload):
             setup_process_pool()
             close_dialog_process()
             ui.navigate.reload()
+
+        except asyncio.CancelledError:
+            # NiceGUI 4 raises this from run.cpu_bound/io_bound once the pools are
+            # torn down (stop button, app shutdown). It is a BaseException, so the
+            # handlers below never see it.
+            if file_id is not None:
+                delete_transcription(file_id)
+            close_dialog_process()
+            raise
 
         except SubprocessException as e:
             close_dialog_process()

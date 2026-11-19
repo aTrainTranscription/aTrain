@@ -1,3 +1,4 @@
+import asyncio
 import os
 import traceback
 from concurrent.futures.process import BrokenProcessPool
@@ -106,6 +107,12 @@ async def download_model(model: str):
             setup_process_pool()
             close_dialog_download()
             ui.navigate.reload()
+
+        except asyncio.CancelledError:
+            # See run_pipeline: raised by NiceGUI 4 once the pools are torn down.
+            remove_model(model)
+            close_dialog_download()
+            raise
 
         except SubprocessException as e:
             remove_model(model)
