@@ -40,8 +40,9 @@ def prepare_transcription(file: Path) -> tuple[Path, str, str]:
     """Create timestamp, file_id and directory for transcription"""
 
     timestamp = datetime.now().strftime(TIMESTAMP_FORMAT)
-    file = file.with_name(secure_filename(file.name))
-    file_id = claim_file_id(file, timestamp)
+    safe_name = secure_filename(file.name)
+    safe_file = file.with_name(safe_name) if safe_name else file
+    file_id = claim_file_id(safe_file, timestamp)
     write_logfile(f"File ID created: {file_id}", file_id)
     return file, file_id, timestamp
 
