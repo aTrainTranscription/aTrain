@@ -81,9 +81,10 @@ Every file can be downloaded from
 Two pitfalls:
 
 - **The browser drops the leading dot.** `.gitattributes` is saved as
-  `gitattributes`. Rename it back. In Explorer, type the name as
-  `.gitattributes.` (with a trailing dot), or run
-  `Rename-Item gitattributes .gitattributes`.
+  `gitattributes`. Versions up to 1.5.0-rc5 need the file and treat the model
+  as incomplete without it, so rename it back there: in Explorer, type the name
+  as `.gitattributes.` (with a trailing dot), or run
+  `Rename-Item gitattributes .gitattributes`. Later versions ignore the file.
 - **Files with the same name get a suffix.** `speaker-detection` has several
   `README.md` and `pytorch_model.bin` files in different subfolders. The
   browser saves the second one as `pytorch_model (1).bin`. Move each file into
@@ -136,6 +137,7 @@ $models = Join-Path ([Environment]::GetFolderPath('MyDocuments')) "aTrain\models
 $manifest = Invoke-RestMethod "https://raw.githubusercontent.com/aTrainTranscription/aTrain/v1.5.0-rc5/aTrain_core/data/models.json"
 foreach ($name in "large-v3-turbo", "speaker-detection") {
   foreach ($f in $manifest.$name.files.PSObject.Properties) {
+    if ($f.Name -eq '.gitattributes') { continue }   # not used by any model
     $path = Join-Path $models "$name\$($f.Name -replace '/', '\')"
     $expected = $f.Value -replace '^sha256:', ''
     if (-not (Test-Path -LiteralPath $path)) { "MISSING  $name/$($f.Name)" }
@@ -158,8 +160,8 @@ it: the failed download can delete the folder.
 ## What aTrain does with incomplete folders
 
 Before it uses a model, aTrain only checks that every file listed in
-`models.json` exists. If one is missing (for example `gitattributes` without
-the dot), it tries to download the model again. Without access to Hugging Face
+`models.json` exists (up to 1.5.0-rc5 including `.gitattributes`). If one is
+missing, it tries to download the model again. Without access to Hugging Face
 that fails, and what happens to the folder depends on the version:
 
 | Version | Certificate error | Hugging Face unreachable, or `HF_HUB_OFFLINE=1` |
