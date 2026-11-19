@@ -14,16 +14,19 @@ continues with the commands for administrators.
 | Location                                            | Contents                                                | Removed by uninstall | Personal data |
 | --------------------------------------------------- | ------------------------------------------------------- | -------------------- | ------------- |
 | `C:\Program Files\WindowsApps\<PackageFullName>\`   | the application, read-only                              | yes                  | no            |
-| `%LOCALAPPDATA%\Packages\<PackageFamilyName>\`      | package-private data Windows keeps for every packaged app, including its temp folder | yes (signed-out users: at their next sign-in) | no |
+| `%LOCALAPPDATA%\Packages\<PackageFamilyName>\`      | package-private data Windows keeps for every packaged app, including its temp folder and the event log | yes (signed-out users: at their next sign-in) | **yes** |
 | Start menu entry "aTrain"                           |                                                         | yes                  |               |
 | `%USERPROFILE%\Documents\aTrain\models\`            | downloaded models, several GB                           | no                   | no            |
 | `%USERPROFILE%\Documents\aTrain\transcriptions\`    | one folder per transcription: text, `metadata.txt`, `log.txt` | no             | **yes**       |
 | `%USERPROFILE%\Documents\aTrain\settings\`          | the options last used in the app                        | no                   | no            |
 
 `Documents\aTrain` moves to the path in the `ATRAIN_USER_DIR` environment
-variable when that is set. aTrain writes nothing under `%LOCALAPPDATA%\aTrain`
-and keeps no global Hugging Face cache: model downloads go straight into the
-model folder, including the download bookkeeping in its `.cache` subfolder.
+variable when that is set. The package folder under `%LOCALAPPDATA%\Packages`
+also holds the event log, `LocalCache\Local\aTrain\Logs\`. The MSIX writes nothing
+to the plain `%LOCALAPPDATA%\aTrain` unless a run from source left an event log
+there, see [Operations](operations.md). aTrain keeps no global Hugging Face cache:
+model downloads go straight into the model folder, including the download
+bookkeeping in its `.cache` subfolder.
 
 Two package identities exist: the Microsoft Store
 build is `26987BusinessAnalyticsand.aTrain`, the packages published on GitHub
@@ -91,6 +94,7 @@ lives there.
 | Application menu entry                                        |                                   | yes                  |               |
 | `~/.var/app/io.github.juergenfleiss.aTrain/data/models/`      | downloaded models, several GB     | with `--delete-data` | no            |
 | `~/.var/app/io.github.juergenfleiss.aTrain/config/aTrain/`    | the options last used in the app  | with `--delete-data` | no            |
+| `~/.var/app/io.github.juergenfleiss.aTrain/.local/state/aTrain/log/` | the event log | with `--delete-data` | **yes** |
 | `~/.var/app/io.github.juergenfleiss.aTrain/cache/`            | library caches and temp files; harmless | with `--delete-data` | no      |
 | `~/Documents/aTrain/transcriptions/`                          | one folder per transcription: text, `metadata.txt`, `log.txt` | no | **yes** |
 
@@ -105,7 +109,8 @@ flatpak uninstall --delete-data io.github.juergenfleiss.aTrain
 flatpak uninstall --unused        # runtimes no other app needs any more
 ```
 
-Leave out `--delete-data` to keep models and settings for a later reinstall.
+Leave out `--delete-data` to keep models, settings and the event log for a later
+reinstall.
 
 **Remove the transcripts.** This deletes all of them:
 
@@ -122,6 +127,9 @@ rm -rf ~/Documents/aTrain
   decommissioned or a user leaves. From inside the app, the **Delete All**
   button in the Archive tab does the same for the current profile; models and
   settings stay.
+- **The event log** can hold file names in error messages and stays after
+  **Delete All**. See [Operations](operations.md) for its location and
+  delete it when a machine is decommissioned or a user leaves.
 - **Models** are large but contain no personal data. They can also be removed
   one by one on the Models page of the app.
 - **Settings** hold the options last used in the app.
