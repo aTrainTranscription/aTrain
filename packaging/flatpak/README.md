@@ -57,7 +57,8 @@ forbids automated submission PRs, so a person opens them.
 ### Releasing
 
 1. Bump `aTrain/version.py`.
-2. Add a `<release>` to the AppStream metadata, ideally with release notes.
+2. Add a `<release>` to the AppStream metadata, ideally with release notes, and
+   set its `date` to the day of the tag. The script checks the version, not the date.
 3. Push the `vVERSION` tag.
 4. Open the PR linked in the workflow summary and merge it after CI passes.
 5. Copy the files to the Flathub repository and open the PR there yourself:

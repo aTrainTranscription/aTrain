@@ -30,12 +30,6 @@ modules:
         archive-type: tar-zst
         strip-components: 0
         dest: models
-      # The archive omits dotfiles, which the app's integrity check expects.
-      - type: file
-        url: https://huggingface.co/aTrain-core/faster-whisper-large-v3-turbo/resolve/df99141c9f5db0615d025664cff8949373a69593/.gitattributes
-        sha256: 11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361
-        dest: models/large-v3-turbo
-        dest-filename: .gitattributes
 
   - name: atrain-required-speaker-detection
     buildsystem: simple
@@ -49,11 +43,6 @@ modules:
         archive-type: tar-zst
         strip-components: 0
         dest: models
-      - type: file
-        url: https://huggingface.co/aTrain-core/speaker-detection/resolve/027e7a80b40a5e3e69cb83ccf901725b59a4063d/.gitattributes
-        sha256: 5ca5d721264b62c84e55b912e7cdb019439cad30d41df8aeea3a23f9b1f86ef3
-        dest: models/speaker-detection
-        dest-filename: .gitattributes
 
   - name: atrain
     buildsystem: simple
