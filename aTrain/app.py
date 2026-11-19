@@ -74,7 +74,8 @@ def start(
         ui.run(
             native=native,
             # NiceGUI reloads by default, which fails when aTrain runs as a console
-            # script. To reload on code changes, run `python dev.py`.
+            # script. To restart on code changes, run aTrain under watchfiles
+            # (see CONTRIBUTING.md).
             reload=False,
             title="aTrain",
             favicon=cast(Path, files("aTrain") / "static" / "favicon.ico"),

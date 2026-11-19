@@ -92,6 +92,7 @@ EXPOSE 8080
 
 # Run in browser mode (no pywebview native window), with hot-reload.
 # The source directory is bind-mounted by docker-compose, so edits on the
-# host are reflected immediately inside the container; dev.py restarts the
+# host are reflected immediately inside the container; watchfiles restarts the
 # NiceGUI server on file change so contributors don't need a manual restart.
-CMD ["python", "dev.py"]
+# --host 0.0.0.0 lets the published port reach the server inside the container.
+CMD ["watchfiles", "--filter", "python", "aTrain start --no-native --no-show --host 0.0.0.0", "aTrain", "aTrain_core"]

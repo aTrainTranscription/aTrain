@@ -25,7 +25,8 @@ Older releases are listed on the [GitHub releases page](https://github.com/aTrai
 
 ### Removed
 
-- `aTrain start --reload`. It never started the server. To reload on code changes, run `python dev.py`.
+- `aTrain start --reload`. It never started the server. To restart on code changes, run aTrain under watchfiles (see CONTRIBUTING.md).
+- `dev.py`. It bound to `0.0.0.0` without the host and origin check.
 
 ### Fixed
 
