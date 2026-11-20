@@ -51,7 +51,7 @@ dependencies = [
 # headless CLI (`aTrain_core transcribe …`, `aTrain init`) works on the
 # base install.
 gui = [
-  "nicegui==3.18.0",
+  "nicegui==4.0.0",
   "pywebview==6.2.1",
   "pywebview[GTK]; sys_platform == 'linux'",
   "show-in-file-manager==1.1.6",
