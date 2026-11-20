@@ -15,7 +15,9 @@ setting that actually prevented installation:
 provisioning.
 - Outbound access to `huggingface.co` for the first model download, unless a
 build with bundled models is used. Machines without internet access need the
-bundled build.
+bundled build, or the models placed by hand: see
+[Installing models without Hugging Face access](offline-model-install.md),
+which also covers proxies that inspect TLS.
 - Write access to `%USERPROFILE%\Documents\aTrain\` or to the path set via the
 `ATRAIN_USER_DIR` environment variable. With folder redirection the models
 land on the network share; plan for several GB per user.
