@@ -153,9 +153,11 @@ copy `models.json` from another machine and set
 Then restart aTrain. With all files in place, aTrain does not contact Hugging
 Face for these models.
 
-**Models page:** it lists a hand-installed `speaker-detection` as not
-downloaded and offers "Download". Without access to Hugging Face, do not click
-it: the failed download can delete the folder.
+**Models page, up to 1.5.0-rc5:** it lists a hand-installed
+`speaker-detection` as not downloaded and offers "Download". Without access to
+Hugging Face, do not click it: the failed download can delete the folder.
+Later versions list it correctly and keep an existing folder when a download
+fails.
 
 ## What aTrain does with incomplete folders
 
