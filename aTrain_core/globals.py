@@ -6,7 +6,15 @@ from importlib.util import find_spec
 from pathlib import Path
 from typing import cast
 
+import truststore
 from platformdirs import user_data_path, user_documents_path
+
+# Verify TLS against the OS trust store instead of certifi's bundle. Corporate
+# proxies that re-sign HTTPS traffic use a CA the OS trusts but certifi does
+# not, so model downloads would fail with CERTIFICATE_VERIFY_FAILED. Done here
+# because every process imports this module, including the spawned workers
+# that run the downloads.
+truststore.inject_into_ssl()
 
 FLATPAK = bool(os.environ.get("FLATPAK_ID"))
 # pyannote requires an explicit opt-in/out for telemetry metrics and raises

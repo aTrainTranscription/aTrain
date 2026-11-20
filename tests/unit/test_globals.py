@@ -102,3 +102,14 @@ def test_slim_build_reports_nothing_as_packaged(dirs):
     # in REQUIRED_MODELS_DIR too. Testing existence there without comparing the
     # dirs would call it packaged and hide it from the model manager again.
     assert not aTrain_core.globals.is_packaged_model("large-v3-turbo")
+
+
+def test_tls_uses_os_trust_store():
+    # Behind a TLS-inspecting proxy only the OS trust store knows the proxy's
+    # CA. Every process imports aTrain_core.globals, so this is where the
+    # injection has to happen for downloads to work there.
+    import ssl
+
+    import truststore
+
+    assert ssl.SSLContext is truststore.SSLContext

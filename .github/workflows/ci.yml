@@ -371,7 +371,7 @@ jobs:
           uv export --locked --no-emit-project --no-hashes --no-dev --extra gui \
             --output-file "$RUNNER_TEMP/unit-constraints.txt" > /dev/null
           uv pip install --constraint "$RUNNER_TEMP/unit-constraints.txt" \
-            platformdirs pyyaml show-in-file-manager huggingface_hub pytest
+            platformdirs truststore pyyaml show-in-file-manager huggingface_hub pytest
           # Pinned tools of .github/scripts/prepare-flatpak.py, as in flatpak.yml.
           uv pip install --group flatpak
 
