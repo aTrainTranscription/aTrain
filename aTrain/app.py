@@ -7,6 +7,8 @@ from aTrain_core.globals import ATRAIN_DIR, FLATPAK, REQUIRED_MODELS
 from aTrain_core.load_resources import get_model
 from typer import Option, Typer
 
+from aTrain.utils.hosts import bind_host, host_check_applies, restrict_to_loopback_hosts
+
 cli = Typer(help="CLI for aTrain.")
 
 
@@ -20,13 +22,10 @@ def init():
 @cli.command()
 def start(
     native: Annotated[bool, Option(help="Run in a native window")] = True,
-    reload: Annotated[bool, Option(help="Reload on code change")] = False,
     show: Annotated[bool, Option(help="If no-native, open Browser tab.")] = True,
     host: Annotated[
         str | None,
-        Option(
-            help="Which IP to bind to (defaults to '127.0.0.1 in native mode, otherwise '0.0.0.0')."
-        ),
+        Option(help="Which IP to bind to (default: '127.0.0.1'; '0.0.0.0' serves on the network)."),
     ] = None,
     port: Annotated[
         int | None,
@@ -34,6 +33,12 @@ def start(
             help="Which port to bind to  (default: 8080 in no-native mode, and an automatically determined open port in native mode)."
         ),
     ] = None,
+    allow_any_host: Annotated[
+        bool,
+        Option(
+            help="Turn off the host and origin check of a server bound to 127.0.0.1 or localhost (needed behind a reverse proxy on the same machine)."
+        ),
+    ] = False,
 ):
     """Start aTrain (requires GUI extras — install with `pip install 'aTrain[gui]'`)."""
     # Lazy imports: keep the GUI stack out of the import chain so headless
@@ -48,7 +53,7 @@ def start(
             user_config_path() / "aTrain" if FLATPAK else (ATRAIN_DIR / "settings")
         )
         with patch.dict(os.environ, NICEGUI_STORAGE_PATH=str(nicegui_storage_path)):
-            from nicegui import ui
+            from nicegui import run, ui
 
             from aTrain.pages import about, archive, faq, models, transcribe  # noqa
         from wakepy import keep
@@ -60,10 +65,18 @@ def start(
 
     print("Running aTrain")
 
-    def ui_run(native: bool, reload: bool, show: bool, host: str, port: int):
+    def ui_run(native: bool, show: bool, host: str, port: int):
+        # A worker pool forked from the running server stops all page updates
+        # on Linux; the first download then never finishes in the UI. Windows
+        # and macOS spawn anyway; Flatpak sets its start method in globals.py.
+        if not FLATPAK:
+            run.process_pool_start_method = "spawn"
         ui.run(
             native=native,
-            reload=reload,
+            # NiceGUI reloads by default, which fails when aTrain runs as a console
+            # script. To restart on code changes, run aTrain under watchfiles
+            # (see CONTRIBUTING.md).
+            reload=False,
             title="aTrain",
             favicon=cast(Path, files("aTrain") / "static" / "favicon.ico"),
             window_size=(1280, 720) if native else None,
@@ -72,8 +85,14 @@ def start(
             port=port,
         )
 
+    # Without --host, aTrain binds to 127.0.0.1 in both modes. Pass --host, for
+    # example 0.0.0.0, to serve on the network (#300).
+    host = bind_host(host)
+    if host_check_applies(host, allow_any_host):
+        restrict_to_loopback_hosts()
+
     if FLATPAK:
-        ui_run(native, reload, show, host, port)
+        ui_run(native, show, host, port)
     else:
         with keep.running():
-            ui_run(native, reload, show, host, port)
+            ui_run(native, show, host, port)

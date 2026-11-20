@@ -27,7 +27,7 @@ dependencies = [
   # CTranslate2 extra (a incompatible fork of Ctranslate2 used by faster-whisper):
   "crisperwhisper[transformers]==2.0.3",
   # 5.17 is the first release with Parakeet TDT, Qwen3-ASR and Canary support.
-  "transformers==5.17.0",
+  "transformers==5.22.0",
   "pandas==3.1.0",
   "pyannote.audio==4.0.7",
   "numpy==2.4.6",
@@ -41,7 +41,7 @@ dependencies = [
   "torchaudio==2.9.1+cu128; sys_platform == 'win32'",
   "torchaudio==2.9.1; sys_platform != 'win32'",
   "typer==0.27.3",
-  "platformdirs==4.13.5",
+  "platformdirs==4.14.0",
   "jiwer==4.0.0",
 ]
 

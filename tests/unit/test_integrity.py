@@ -104,6 +104,27 @@ def test_find_missing_files_does_not_hash(model_dir):
     assert find_missing_files(path, manifest) == []
 
 
+def test_find_missing_files_does_not_require_gitattributes(model_dir):
+    # A complete model can lack .gitattributes. The tarballs of the bundled
+    # models do not contain it (#335). A browser saves it as "gitattributes"
+    # when someone downloads a model by hand (#318).
+    path, manifest = model_dir
+    manifest[".gitattributes"] = sha256_of(b"*.bin filter=lfs")
+    (path / "gitattributes").write_bytes(b"*.bin filter=lfs")
+    assert find_missing_files(path, manifest) == []
+    (path / "model.bin").unlink()
+    assert find_missing_files(path, manifest) == ["model.bin"]
+
+
+def test_verify_model_still_reports_a_missing_gitattributes(model_dir):
+    # Only find_missing_files() skips .gitattributes. A download fetches the
+    # file. verify_model() runs after the download and checks its hash like
+    # that of every other file.
+    path, manifest = model_dir
+    manifest[".gitattributes"] = sha256_of(b"*.bin filter=lfs")
+    assert verify_model(path, manifest) == [".gitattributes: missing"]
+
+
 # --- the manifest itself -------------------------------------------------
 
 
@@ -151,3 +172,38 @@ def test_failed_verification_removes_the_model(tmp_path, monkeypatch):
     with pytest.raises(load_resources.ModelIntegrityError):
         load_resources.get_model("tiny")
     assert not model_dir.exists()
+
+
+# --- get_model uses a bundled model as it is -----------------------------
+
+
+def test_bundled_model_without_gitattributes_is_not_downloaded(tmp_path, monkeypatch):
+    """Bundled models sit in the read-only install folder, where a download
+    fails with a PermissionError (#335)."""
+    import aTrain_core.load_resources as load_resources
+
+    model_dir = tmp_path / "large-v3-turbo"
+    model_dir.mkdir()
+    (model_dir / "model.bin").write_bytes(b"pinned")
+
+    def no_download(model_path, model_info, progress=None):
+        pytest.fail("get_model() tried to download the bundled model")
+
+    monkeypatch.setattr(load_resources, "REQUIRED_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(load_resources, "download_model", no_download)
+    monkeypatch.setattr(
+        load_resources,
+        "load_model_config_file",
+        lambda: {
+            "large-v3-turbo": {
+                "repo_id": "x",
+                "revision": "y",
+                "files": {
+                    ".gitattributes": sha256_of(b"*.bin filter=lfs"),
+                    "model.bin": sha256_of(b"pinned"),
+                },
+            }
+        },
+    )
+
+    assert load_resources.get_model("large-v3-turbo") == model_dir
