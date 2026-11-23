@@ -29,22 +29,27 @@ Flathub update. Flathub builds and publishes the app itself.
 
 ## Workflow
 
-The workflow runs on `v*` tags, on manual runs, and on PRs that change packaging
-inputs.
+The workflow runs on `v*` tags, on manual runs, weekly on `develop` (Monday
+03:00 UTC), and on PRs that change packaging inputs, dependencies or the version.
 
-1. **prepare** generates `flatpak-release/`.
-2. **build** runs natively on GitHub's `ubuntu-24.04` (x86_64) and
-   `ubuntu-24.04-arm` (aarch64) runners. It uses Flathub's `gnome-50` container
-   and the Flatpak project's
+1. **prepare** generates `flatpak-release/`. This already fails on a missing
+   wheel or a version mismatch.
+2. **lint** checks the Flathub manifest, the first of the two checks Flathub
+   runs.
+3. **build** runs on every event except PRs that only change dependencies
+   (`pyproject.toml`, `uv.lock`) or `aTrain/version.py`: those get steps 1 and 2
+   only, and the weekly run builds them. To build a dependency bump before
+   merging, start the workflow by hand on the PR's branch. The build runs
+   natively on GitHub's `ubuntu-24.04` (x86_64) and `ubuntu-24.04-arm`
+   (aarch64) runners. It uses Flathub's `gnome-50` container and the Flatpak
+   project's
    [`flatpak-builder` action](https://github.com/flatpak/flatpak-github-actions).
    Each build:
-   - lints the Flathub manifest before building and the repository afterwards,
-     the two checks Flathub runs;
+   - lints the repository afterwards, the second check Flathub runs;
    - builds the submitted manifest on tags and `local.yml` otherwise;
    - imports the main Python packages inside the Flatpak as a smoke test;
-   - on tags and manual runs, uploads a `.flatpak` bundle for testing, kept 14
-     days.
-3. **flathub-files** runs for stable tags once both builds pass. It commits the
+   - outside PRs, uploads a `.flatpak` bundle for testing, kept 14 days.
+4. **flathub-files** runs for stable tags once both builds pass. It commits the
    two Flathub files to `packaging/flathub/` on the branch
    `flathub/update-VERSION` and links the PR against `develop` in the job
    summary. Once merged, `packaging/flathub/` holds the files of the latest
