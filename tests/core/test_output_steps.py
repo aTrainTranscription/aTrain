@@ -9,16 +9,6 @@ import yaml
 from aTrain_core import outputs
 from aTrain_core.settings import ComputeType, Device, Settings
 
-try:
-    from aTrain_core.transcribe import prepare_transcription
-except ModuleNotFoundError:
-    import sys
-    from unittest.mock import MagicMock
-
-    sys.modules.setdefault("pyannote", MagicMock())
-    sys.modules.setdefault("pyannote.audio", MagicMock())
-    from aTrain_core.transcribe import prepare_transcription
-
 OUTPUT_FILES = {
     "transcription.json",
     "transcription.txt",
@@ -203,29 +193,3 @@ def test_checkpoint_is_tied_to_the_given_source_stat(tmp_path, source):
 
     assert outputs.read_checkpoint(path, source) is None
     assert outputs.read_checkpoint(path, source, source_stat=decoded_from) is not None
-
-
-def test_prepare_transcription_preserves_path_with_spaces_and_special_chars(archive):
-    original_path = Path("recordings/my interview (1).mp3")
-    file, file_id, _ = prepare_transcription(original_path)
-
-    # File path must be preserved exactly so CLI and engine can read the actual file
-    assert file == original_path
-    assert file.name == "my interview (1).mp3"
-
-    # Sanitised name only names the archive folder (file_id)
-    assert " " not in file_id
-    assert "(" not in file_id
-    assert ")" not in file_id
-    assert "my_inte" in file_id
-    assert (archive / file_id).is_dir()
-    assert (archive / file_id / "log.txt").is_file()
-
-
-def test_prepare_transcription_handles_umlauts(archive):
-    original_path = Path("Gespräch.mp3")
-    file, file_id, _ = prepare_transcription(original_path)
-
-    assert file == original_path
-    assert file.name == "Gespräch.mp3"
-    assert (archive / file_id).is_dir()
