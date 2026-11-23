@@ -20,7 +20,7 @@ mechanics are in [CONTRIBUTING.md](CONTRIBUTING.md).
 - `aTrain/` - NiceGUI desktop app (pages, components, utils). Entry points `aTrain start` and `aTrain init` (downloads the required models).
 - `aTrain_core/` - transcription engine (faster-whisper and transformers backends), model loading, headless CLI `aTrain_core transcribe|load|remove`.
 - `aTrain_core/data/models.json` - model registry. Every entry carries pinned file hashes (`scripts/refresh_model_hashes.py` generates them) and the licence id the SBOM script checks.
-- `packaging/` - platform builds (so far only `msix/`; Flatpak and the PyInstaller specs still live in `flatpak/`, `share/` and the root and are meant to move here). `.github/workflows/release.yml` builds and signs the Windows release on tag push; Flatpak and macOS are follow-ups.
+- `packaging/` - platform builds: `msix/` and `flatpak/` (the Flatpak manifest template; its launcher script and the desktop and AppStream files still live in `flatpak/` and `share/`, the PyInstaller specs in the root). `.github/workflows/release.yml` builds and signs the Windows release on tag push; `.github/workflows/flatpak.yml` builds the Flatpak and prepares the Flathub update. macOS is a follow-up.
 - `tests/unit`, `tests/core`, `tests/ui`, `tests/e2e_browser` - `.github/workflows/ci.yml` shows what runs where.
 - `docs/` - user and security documentation.
 

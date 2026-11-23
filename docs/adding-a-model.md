@@ -126,6 +126,8 @@ licence dialog on the Models page is wired to `crisperwhisper-v2-large` in
 `large-v3-turbo` and `speaker-detection` are required models: builds with
 bundled models ship them inside the installer. They come from archives in
 aTrain-core datasets, referenced with their sha256 in
-`.github/workflows/release.yml` and in the Flatpak manifest in the
+`.github/workflows/release.yml` and in the Flatpak manifest template
+`packaging/flatpak/io.github.juergenfleiss.aTrain.yml`, from which `flatpak.yml`
+prepares the update for the
 [Flathub repository](https://github.com/flathub/io.github.juergenfleiss.aTrain).
-Changing a required model means updating those as well.
+Changing a required model means updating both.

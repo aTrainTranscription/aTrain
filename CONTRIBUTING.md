@@ -11,6 +11,13 @@ uv run aTrain init      # download required ML models
 uv run aTrain start     # run the app
 ```
 
+To restart the app whenever a Python file changes, run it under watchfiles,
+which comes with NiceGUI:
+
+```bash
+uv run watchfiles --filter python "aTrain start --no-native --no-show" aTrain aTrain_core
+```
+
 If you do not have uv installed yet, see the
 [uv installation guide](https://docs.astral.sh/uv/#installation).
 
@@ -43,12 +50,13 @@ docker compose up        # builds the image and starts aTrain
 
 The app is then served at `http://localhost:8080`.
 
-The container runs aTrain in **browser mode** (`aTrain start --no-native`). It
-deliberately does **not** ship the native desktop-window backend: `pywebview`'s
-GTK backend has no use in a headless container, and excluding it keeps the image
-lean and portable. Development inside the container is therefore browser-based
-only; contributors who need to exercise the native window can do so on their
-host after installing the GUI build dependencies above.
+The container runs aTrain in **browser mode** under watchfiles, which
+restarts the server when you edit the source. It deliberately does **not** ship
+the native desktop-window backend: `pywebview`'s GTK backend has no use in a
+headless container, and excluding it keeps the image lean and portable.
+Development inside the container is therefore browser-based only; contributors
+who need to exercise the native window can do so on their host after installing
+the GUI build dependencies above.
 
 ## Running the CI checks locally
 
