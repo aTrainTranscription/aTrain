@@ -14,6 +14,9 @@ on:
       - "aTrain/version.py"
       - "pyproject.toml"
       - "uv.lock"
+  # Weekly full build of develop, which PRs that only change dependencies skip.
+  schedule:
+    - cron: "0 3 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -31,10 +34,36 @@ jobs:
     outputs:
       version: ${{ steps.prepare.outputs.version }}
       stable: ${{ steps.prepare.outputs.stable }}
+      build: ${{ steps.filter.outputs.build }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # On pull_request the checkout is the PR merge commit, whose first
+          # parent is the base branch. Depth 2 is enough to diff against it.
+          fetch-depth: 2
+      - name: Decide whether to build
+        # Generating the manifests already fails on a missing wheel or a version
+        # mismatch, so a PR that only changes dependencies or the version skips
+        # the full build; the weekly run builds it. PRs that change the
+        # packaging itself build. Other events always build.
+        id: filter
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Own command, so a failing diff fails the job instead of skipping.
+          files=$(git diff --name-only HEAD^1 HEAD)
+          packaging=$(echo "$files" \
+            | grep -E '^(\.github/workflows/flatpak\.yml|\.github/scripts/prepare-flatpak\.py|packaging/flatpak/|flatpak/|share/)' \
+            | grep -v '^packaging/flatpak/README\.md$' || true)
+          if [ -n "$packaging" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No packaging change, skipping the build."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: astral-sh/setup-uv@v10.3.3
       - id: prepare
         env:
@@ -55,9 +84,24 @@ jobs:
         run: |
           echo "Flathub manifests: [flatpak-manifests]($URL)" >> "$GITHUB_STEP_SUMMARY"
 
+  lint:
+    name: Lint Flathub manifest
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: flatpak-manifests
+          path: flatpak-release
+      - run: flatpak-builder-lint --exceptions --gha-format manifest flatpak-release/io.github.juergenfleiss.aTrain.yml
+
   build:
     name: Build (${{ matrix.arch }})
-    needs: prepare
+    needs: [prepare, lint]
+    if: needs.prepare.outputs.build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -77,8 +121,12 @@ jobs:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-50
       # Unused host toolchains are mounted only to delete them: the CUDA
       # wheels, bundled models, build, repository and bundle need about 40 GB.
+      # /var/lib/flatpak is a volume so flatpak-builder can update the image's
+      # SDK: on some runners the overlay filesystem refuses the renames
+      # ("Invalid cross-device link") and flatpak-builder then crashes.
       options: >-
         --privileged
+        -v /var/lib/flatpak
         -v /usr/share/dotnet:/unused/dotnet
         -v /usr/local/lib/android:/unused/android
         -v /usr/local/.ghcup:/unused/ghcup
@@ -97,8 +145,6 @@ jobs:
         with:
           name: flatpak-manifests
           path: flatpak-release
-      - name: Lint Flathub manifest
-        run: flatpak-builder-lint --exceptions --gha-format manifest flatpak-release/io.github.juergenfleiss.aTrain.yml
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: ${{ env.MANIFEST }}
