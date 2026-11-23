@@ -77,7 +77,7 @@ jobs:
           echo "Resolved version: $version"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
@@ -276,7 +276,7 @@ jobs:
           env.SIGNPATH_API_TOKEN != '' && env.SIGNPATH_ORG_ID != '' &&
           vars.SIGNPATH_PROJECT_SLUG != '' && vars.SIGNPATH_POLICY_SLUG != '' &&
           vars.SIGNPATH_PUBLISHER != ''
-        uses: SignPath/github-action-submit-signing-request@v3.0
+        uses: SignPath/github-action-submit-signing-request@v3.1
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
@@ -437,7 +437,7 @@ jobs:
           python-version: "3.13"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.3.3
+        uses: astral-sh/setup-uv@v10.4.0
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
