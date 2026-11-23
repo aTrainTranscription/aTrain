@@ -1,14 +1,12 @@
+from aTrain.components.settings.field import field, style_select
 from aTrain.utils.models import model_languages
 from nicegui import ElementFilter, app, ui
 
 
 def input_language():
-    with ui.column().classes("gap-2"):
-        ui.label("Select Language").classes("font-bold text-dark text-md")
-        ui.separator()
-        with ui.select(options=get_language_options()) as select:
-            select.classes("w-full").props("filled bg-color=gray-100 color=dark")
-            select.mark("select_language").bind_value(app.storage.general, "language")
+    with field("Language"):
+        select = style_select(ui.select(options=get_language_options()))
+        select.mark("select_language").bind_value(app.storage.general, "language")
 
 
 def get_language_options() -> dict:
