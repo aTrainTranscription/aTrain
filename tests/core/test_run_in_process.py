@@ -4,6 +4,7 @@ No GPU needed: run_in_process is tested with stdlib targets, the GPU routing wit
 """
 
 import json
+import multiprocessing
 import os
 
 import numpy as np
@@ -28,6 +29,46 @@ def test_run_in_process_reraises_error():
 def test_run_in_process_reports_crashed_child():
     with pytest.raises(RuntimeError, match="ended unexpectedly"):
         transcribe.run_in_process(os.abort)
+
+
+def _read_marker():
+    return getattr(transcribe, "_parent_only_marker", None)
+
+
+@pytest.fixture
+def default_start_method_fork():
+    """Make fork the global default, as it is on Linux (until Python 3.14)."""
+    if "fork" not in multiprocessing.get_all_start_methods():
+        pytest.skip("fork is not available on this platform")
+    previous = multiprocessing.get_start_method()
+    multiprocessing.set_start_method("fork", force=True)
+    yield
+    multiprocessing.set_start_method(previous, force=True)
+
+
+@pytest.mark.usefixtures("default_start_method_fork")
+def test_run_in_process_starts_a_clean_interpreter(monkeypatch):
+    # A forked child inherits the parent's state, an initialised CUDA context included,
+    # and then cannot initialise CUDA itself. A spawned child starts clean.
+    monkeypatch.setattr(transcribe, "_parent_only_marker", True, raising=False)
+    assert transcribe.run_in_process(_read_marker) is None
+
+
+def _init_cuda_in_child() -> bool:
+    import torch
+
+    torch.zeros(1, device="cuda")
+    return True
+
+
+def test_gpu_child_initialises_cuda_after_parent_checked_device():
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("needs a CUDA GPU")
+    from aTrain_core.settings import check_device
+
+    check_device(Device.GPU)  # what the CLI does before transcribing
+    assert transcribe.run_in_process(_init_cuda_in_child)
 
 
 def settings(device: Device) -> Settings:

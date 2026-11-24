@@ -1,9 +1,9 @@
+import multiprocessing
 import os
 import warnings
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
-from multiprocessing import Manager, Process
 from multiprocessing.managers import DictProxy
 from pathlib import Path
 
@@ -103,10 +103,14 @@ def run_in_process(target: Callable, **kwargs):
 
     The child exits once target returns, so every model it loaded and all GPU memory
     it held, including the CUDA context that torch.cuda.empty_cache() cannot free,
-    is released by the operating system."""
-    with Manager() as manager:
+    is released by the operating system.
+
+    The child is spawned, never forked: a forked child cannot initialise CUDA once the
+    parent has touched it, e.g. through torch.cuda.is_available() in check_device()."""
+    context = multiprocessing.get_context("spawn")
+    with context.Manager() as manager:
         returnDict = manager.dict()
-        p = Process(
+        p = context.Process(
             target=_run_and_report,
             args=(target, kwargs, returnDict),
             daemon=True,
