@@ -125,7 +125,8 @@ def run_in_process(target: Callable, **kwargs):
             raise error
         if "result" not in returnDict.keys():
             raise RuntimeError(
-                f"{target.__name__} process ended unexpectedly (exit code {exitcode})"
+                f"{getattr(target, '__name__', repr(target))} process ended unexpectedly "
+                f"(exit code {exitcode})"
             )
         return returnDict["result"]
 
@@ -135,7 +136,10 @@ def _run_and_report(target: Callable, kwargs: dict, returnDict: DictProxy) -> No
     try:
         returnDict["result"] = target(**kwargs)
     except Exception as error:
-        returnDict["error"] = error
+        try:
+            returnDict["error"] = error
+        except Exception:  # if the error can't be pickled; keep at least its message
+            returnDict["error"] = RuntimeError(repr(error))
     # Skip interpreter shutdown, it can hang after a GPU run (see run_transcription_in_process)
     os._exit(0)
 
