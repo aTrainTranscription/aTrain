@@ -75,4 +75,4 @@ sudo systemctl status aTrain.service
 sudo journalctl -e -u aTrain.service
 ```
 
-You can put this behind a reverse proxy, but prefix-path is currently not supported. If aTrain listens on `127.0.0.1` or `localhost` behind a proxy on the same machine, append `--allow-any-host` in the 'ExecStart' line. Without it, aTrain rejects requests under the proxy's host name and socket.io connections from the proxy's public origin, so the page does not load or does not respond.
+You can put this behind a reverse proxy. If aTrain listens on `127.0.0.1` or `localhost` behind a proxy on the same machine, append `--allowed-host my.domain.com` in the 'ExecStart' line, with the host name the proxy serves. Without it, aTrain rejects requests under that host name, so the page does not load. The proxy must pass on the `Host` header and set `X-Forwarded-Proto`, otherwise aTrain rejects the socket.io connection and the page does not respond. To serve aTrain under a path such as `/atrain`, have the proxy strip that path and send it in the `X-Forwarded-Prefix` header.

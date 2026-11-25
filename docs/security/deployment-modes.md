@@ -78,8 +78,10 @@ The host and origin check is on only when aTrain listens on `127.0.0.1` or
 name and from any origin.
 
 A reverse proxy on the same machine can also forward to aTrain on
-`127.0.0.1`. In that setup aTrain needs `--allow-any-host`, which turns the
-host and origin check off as well.
+`127.0.0.1`. In that setup pass the proxy's host name with
+`--allowed-host my.domain.com`. aTrain then accepts that name in addition to
+`127.0.0.1` and `localhost`, and keeps the origin check. `--allow-any-host`
+also works, but turns the host and origin check off entirely.
 
 What a shared setup needs beyond that, such as separating the users' data,
 the service account and model downloads, is not documented yet;
