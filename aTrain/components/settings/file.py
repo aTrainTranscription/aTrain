@@ -11,11 +11,6 @@ class CustomUpload(ui.upload):
         self.on("added", self.set_added)
         self.set_select()
 
-    def pick_files(self):
-        self.reset()
-        self.set_select()
-        self.run_method("pickFiles")
-
     def upload(self):
         self.run_method("upload")
 
@@ -44,7 +39,16 @@ def input_file() -> CustomUpload:
     if not (FLATPAK or LINUX or MACOS) or app.native.main_window is None:
         select_button.bind_text(uploader, "file_text")
         select_button.bind_icon(uploader, "file_icon")
-        select_button.on_click(uploader.pick_files)
+        # Open the dialog in the browser while it handles the click: WebKit
+        # (Safari) ignores a pickFiles() that arrives later from the server.
+        # pickFiles waits one tick, until reset() has re-rendered the file
+        # input; the tick still runs while the browser handles the click.
+        select_button.on(
+            "click",
+            js_handler=f"() => {{ runMethod({uploader.id}, 'reset', []);"
+            f" Vue.nextTick(() => runMethod({uploader.id}, 'pickFiles', [])); }}",
+        )
+        select_button.on_click(uploader.set_select)
         return uploader
 
     with file_column:

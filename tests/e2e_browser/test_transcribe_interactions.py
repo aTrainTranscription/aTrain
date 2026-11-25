@@ -38,3 +38,34 @@ def test_advanced_settings_button_opens_dialog(atrain_server: str, page: Page) -
 
     page.get_by_role("button", name="Advanced Settings").click()
     expect(gpu_label).to_be_visible()
+
+
+def test_select_file_button_opens_file_chooser(atrain_server: str, page: Page) -> None:
+    """WebKit (Safari) opens a file dialog only while it handles the user's
+    click. Opening it after a round trip through the server is ignored
+    silently, so the button must open the chooser in the browser.
+
+    Playwright opens the chooser either way, so the test records which event
+    the page is handling when the file input is clicked."""
+    page.add_init_script(
+        """
+        const click = HTMLInputElement.prototype.click;
+        HTMLInputElement.prototype.click = function () {
+            if (this.type === "file") {
+                window.__fileInputClickedDuring = window.event && window.event.isTrusted ? window.event.type : null;
+            }
+            return click.call(this);
+        };
+        """
+    )
+    page.goto(atrain_server)
+    with page.expect_file_chooser(timeout=5000) as chooser:
+        page.get_by_role("button", name="Select File").click()
+    assert page.evaluate("window.__fileInputClickedDuring") == "click"
+
+    # Picking again replaces the queued file, so the chooser must open again.
+    chooser.value.set_files(files=[{"name": "a.wav", "mimeType": "audio/wav", "buffer": b"\0"}])
+    page.evaluate("window.__fileInputClickedDuring = undefined")
+    with page.expect_file_chooser(timeout=5000):
+        page.get_by_role("button", name="1 File Added").click()
+    assert page.evaluate("window.__fileInputClickedDuring") == "click"
