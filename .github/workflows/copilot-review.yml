@@ -14,8 +14,11 @@ jobs:
   request:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - name: Add Copilot as reviewer
+        # A convenience step: an expired token must not turn every new PR red.
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.COPILOT_REQUEST_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
