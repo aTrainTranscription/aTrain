@@ -6,7 +6,7 @@ name: Request Copilot review
 # Do not add a checkout of the PR head or any step that executes PR content.
 on:
   pull_request_target:
-    types: [opened, reopened, ready_for_review]
+    types: [opened, ready_for_review]
 
 permissions: {}
 
