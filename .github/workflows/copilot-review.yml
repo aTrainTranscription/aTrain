@@ -1,7 +1,14 @@
 name: Request Copilot review
+
+# pull_request_target (not pull_request) so that the secret is available on
+# pull requests from forks. This is safe only because the job never checks out
+# or runs code from the pull request: it makes one API call with the PR number.
+# Do not add a checkout of the PR head or any step that executes PR content.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened, ready_for_review]
+
+permissions: {}
 
 jobs:
   request:
