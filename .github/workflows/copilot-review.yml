@@ -1,0 +1,26 @@
+name: Request Copilot review
+
+# pull_request_target (not pull_request) so that the secret is available on
+# pull requests from forks. This is safe only because the job never checks out
+# or runs code from the pull request: it makes one API call with the PR number.
+# Do not add a checkout of the PR head or any step that executes PR content.
+on:
+  pull_request_target:
+    types: [opened, ready_for_review]
+
+permissions: {}
+
+jobs:
+  request:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Add Copilot as reviewer
+        # A convenience step: an expired token must not turn every new PR red.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_REQUEST_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: gh pr edit "$PR" --repo "$REPO" --add-reviewer "@copilot"
