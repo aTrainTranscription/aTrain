@@ -25,6 +25,8 @@ project overview, badges, and benchmarks, see the [main README](../README.md).
 
 ## Reference
 
+- [Operations](operations.md) — the event log: location, format and
+  retention.
 - [Security](security/) — security assessments, e.g. the
   [OWASP Top 10 for LLM Applications assessment](security/owasp-llm-top10-assessment.md).
 - [Deployment modes](security/deployment-modes.md) — who can reach the local

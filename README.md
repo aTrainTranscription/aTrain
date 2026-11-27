@@ -184,6 +184,7 @@ Full user documentation lives in [`docs/`](docs/README.md):
 - [Installation (end users)](docs/installation.md) — packaged apps and pip.
 - [Linux installation](docs/installation-linux.md) — manual Ubuntu / Debian setup.
 - [Tutorials](docs/tutorials.md) — importing aTrain output into MAXQDA and NVivo.
+- [Operations](docs/operations.md) — the event log: location, format and retention.
 
 ## For contributors
 
