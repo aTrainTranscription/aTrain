@@ -8,7 +8,9 @@ handler, so code that runs in a worker must not call log_event().
 Transcript text and the initial prompt do not belong in this log.
 """
 
+import contextlib
 import logging
+import sys
 import textwrap
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -32,7 +34,7 @@ class _Formatter(logging.Formatter):
         # formatException(): another handler on the logger may format the record
         # first and store an unindented traceback.
         first, _, rest = super().format(record).partition("\n")
-        return f"{first}\n{textwrap.indent(rest, '    ')}" if rest else first
+        return f"{first}\n{textwrap.indent(rest, '    ', lambda _: True)}" if rest else first
 
 
 def setup_event_log(log_dir: Path = EVENT_LOG_DIR) -> Path | None:
@@ -48,7 +50,7 @@ def setup_event_log(log_dir: Path = EVENT_LOG_DIR) -> Path | None:
             path, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8"
         )
     except OSError as error:
-        print(f"Cannot write the event log to {path}: {error}")
+        print(f"Cannot write the event log to {path}: {error}", file=sys.stderr)
         return None
     handler.setFormatter(_Formatter("%(asctime)s %(levelname)s %(message)s", "%Y-%m-%d %H:%M:%S%z"))
     logger.addHandler(handler)
@@ -66,8 +68,10 @@ def log_event(event: str, level: int = logging.INFO, exc_info=None, **fields) ->
 
 def log_unhandled_exception(error: Exception) -> None:
     # NiceGUI hands an error while building a page to this hook twice. The marker
-    # on the exception keeps the second call out of the log.
+    # on the exception keeps the second call out of the log. An exception that takes
+    # no new attribute, a frozen dataclass for example, is logged on every call.
     if getattr(error, "_in_event_log", False):
         return
-    error._in_event_log = True  # type: ignore[attr-defined]
+    with contextlib.suppress(Exception):
+        error._in_event_log = True  # type: ignore[attr-defined]
     log_event("unhandled_exception", logging.ERROR, exc_info=error, error=str(error))

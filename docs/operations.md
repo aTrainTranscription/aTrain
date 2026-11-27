@@ -33,17 +33,18 @@ One line per event: time with UTC offset, level, event name, then `key=value`
 fields. Unhandled exceptions add an indented traceback below their line.
 
 ```
-2026-11-09 11:03:10+0100 INFO server_started version='1.5.0' native=True host='127.0.0.1' port=None allow_any_host=False
-2026-11-09 11:04:35+0100 INFO server_stopped
+2026-11-27 16:20:00+0100 INFO server_starting version='1.5.0' native=False host='127.0.0.1' port=8080 allow_any_host=False
+2026-11-27 16:20:01+0100 INFO server_stopped
 ```
 
 ### Events
 
-| Event                              | Fields                                                                                    |
-| ---------------------------------- | ----------------------------------------------------------------------------------------- |
-| `server_started`, `server_stopped` | version, native, host, port, allow_any_host at start; `port=None` means 8080 in browser mode and a free port in the native window |
-| `server_failed`                    | exit code; the server did not start, for example because the port is taken                |
-| `unhandled_exception`              | error, traceback                                                                          |
+| Event                 | Fields                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------ |
+| `server_starting`     | version, native, host, port, allow_any_host; written before the server binds the port      |
+| `server_stopped`      |                                                                                            |
+| `server_failed`       | exit code; the server did not start, for example because the port is taken                 |
+| `unhandled_exception` | error, traceback; also when an import fails at start                                       |
 
 ### Personal data
 

@@ -35,8 +35,14 @@ ATRAIN_DIR = (
 MODELS_DIR = (user_data_path() / "models") if FLATPAK else (ATRAIN_DIR / "models")
 # The app name goes in as an argument. user_log_path() / "aTrain" would give a
 # different folder, for example %LOCALAPPDATA%\Logs\aTrain instead of the
-# %LOCALAPPDATA%\aTrain\Logs that docs/operations.md names.
-EVENT_LOG_DIR = user_log_path("aTrain", appauthor=False)
+# %LOCALAPPDATA%\aTrain\Logs that docs/operations.md names. In a Flatpak the path
+# is written out. Flatpak before 1.13.1 does not set XDG_STATE_HOME, and platformdirs
+# would then use ~/.local/state, outside the app's folder ~/.var/app/<id>.
+EVENT_LOG_DIR = (
+    Path.home() / ".var/app" / os.environ["FLATPAK_ID"] / ".local/state/aTrain/log"
+    if FLATPAK
+    else user_log_path("aTrain", appauthor=False)
+)
 
 if FLATPAK:
     flatpak_required_models_dir = Path("/app/share/atrain-required-models")

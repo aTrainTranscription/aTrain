@@ -3,6 +3,7 @@
 Torch- and NiceGUI-free, so they run in the lightweight `unit` CI job.
 """
 
+import dataclasses
 from logging.handlers import RotatingFileHandler
 
 import pytest
@@ -30,10 +31,10 @@ def log_file(tmp_path, clean_logger):
 
 
 def test_writes_one_line_per_event_with_its_fields(log_file):
-    event_log.log_event("server_started", version="1.5.0", port=8000)
+    event_log.log_event("server_starting", version="1.5.0", port=8000)
 
     line = log_file.read_text(encoding="utf-8").strip()
-    assert line.endswith("INFO server_started version='1.5.0' port=8000"), line
+    assert line.endswith("INFO server_starting version='1.5.0' port=8000"), line
 
 
 def test_event_without_fields_has_no_trailing_space(log_file):
@@ -43,7 +44,7 @@ def test_event_without_fields_has_no_trailing_space(log_file):
 
 
 def test_a_line_break_in_a_value_cannot_forge_a_second_entry(log_file):
-    event_log.log_event("server_started", version="1.5.0\n2026-01-01 00:00:00 INFO server_stopped")
+    event_log.log_event("server_starting", version="1.5.0\n2026-01-01 00:00:00 INFO server_stopped")
 
     assert len(log_file.read_text(encoding="utf-8").splitlines()) == 1
 
@@ -59,7 +60,7 @@ def test_keeps_five_files_at_most(tmp_path, clean_logger, monkeypatch):
     event_log.setup_event_log(tmp_path)
 
     for number in range(200):
-        event_log.log_event("server_started", port=number)
+        event_log.log_event("server_starting", port=number)
 
     names = sorted(path.name for path in tmp_path.iterdir())
     assert names == ["atrain.log", *[f"atrain.log.{n}" for n in range(1, 5)]], names
@@ -75,13 +76,16 @@ def test_without_setup_events_go_nowhere(tmp_path, monkeypatch):
     assert event_log.logger.propagate is False, "the event must not reach the root logger"
 
 
-def test_an_unwritable_folder_does_not_stop_the_app(tmp_path, clean_logger):
+def test_an_unwritable_folder_does_not_stop_the_app(tmp_path, clean_logger, capsys):
     blocked = tmp_path / "a_file"
     blocked.write_text("")
 
     assert event_log.setup_event_log(blocked / "logs") is None
+    output = capsys.readouterr()
+    assert "Cannot write the event log" in output.err
+    assert output.out == ""
 
-    event_log.log_event("server_started")  # still must not raise
+    event_log.log_event("server_starting")  # still must not raise
 
 
 def test_records_the_traceback_of_an_exception(log_file):
@@ -114,3 +118,27 @@ def test_a_line_break_in_an_exception_cannot_forge_an_entry(log_file):
     lines = log_file.read_text(encoding="utf-8").splitlines()
     entries = [line for line in lines if not line.startswith(" ")]
     assert entries == lines[:1], lines
+
+
+def test_blank_lines_in_a_chained_traceback_are_indented(log_file):
+    try:
+        try:
+            raise KeyError("first")
+        except KeyError as cause:
+            raise ValueError("second") from cause
+    except ValueError as error:
+        event_log.log_unhandled_exception(error)
+
+    lines = log_file.read_text(encoding="utf-8").splitlines()
+    entries = [line for line in lines if not line.startswith(" ")]
+    assert entries == lines[:1], lines
+
+
+def test_an_exception_that_takes_no_marker_is_still_logged(log_file):
+    @dataclasses.dataclass(frozen=True)
+    class FrozenError(Exception):
+        reason: str
+
+    event_log.log_unhandled_exception(FrozenError("boom"))
+
+    assert "ERROR unhandled_exception error='boom'" in log_file.read_text(encoding="utf-8")

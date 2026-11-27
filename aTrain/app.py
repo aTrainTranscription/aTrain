@@ -44,6 +44,8 @@ def start(
     ] = False,
 ):
     """Start aTrain (requires GUI extras — install with `pip install 'aTrain[gui]'`)."""
+    # Set up the log before the imports below, so that a crash in them is logged.
+    setup_event_log()
     # Lazy imports: keep the GUI stack out of the import chain so headless
     # installs (no [gui] extras) can still run `aTrain init` and `aTrain --help`.
     try:
@@ -58,14 +60,19 @@ def start(
         with patch.dict(os.environ, NICEGUI_STORAGE_PATH=str(nicegui_storage_path)):
             from nicegui import app, run, ui
             from nicegui.error import error_content
+            from nicegui.native import find_open_port
 
             from aTrain.pages import about, archive, faq, models, transcribe  # noqa
         from wakepy import keep
     except ImportError as e:
+        log_unhandled_exception(e)
         sys.exit(
             f"Error: GUI extras missing — '{e.name}' is not installed.\n"
             "Install them with: pip install 'aTrain[gui]'"
         )
+    except Exception as error:
+        log_unhandled_exception(error)
+        raise
 
     print("Running aTrain")
 
@@ -95,15 +102,6 @@ def start(
     if host_check_applies(host, allow_any_host):
         restrict_to_loopback_hosts()
 
-    setup_event_log()
-    log_event(
-        "server_started",
-        version=__version__,
-        native=native,
-        host=host,
-        port=port,
-        allow_any_host=allow_any_host,
-    )
     app.on_shutdown(lambda: log_event("server_stopped"))
     app.on_exception(log_unhandled_exception)
     # Without a handler of its own, NiceGUI shows its 500 page for an error while
@@ -111,6 +109,19 @@ def start(
     app.on_page_exception(lambda error: error_content(500, error))
 
     try:
+        # Without --port, ui.run would pick the port by this rule. It is picked here,
+        # so that the log names it.
+        port = port or (find_open_port() if native else 8080)
+        # The server binds the port after this event. If the start fails,
+        # server_failed follows.
+        log_event(
+            "server_starting",
+            version=__version__,
+            native=native,
+            host=host,
+            port=port,
+            allow_any_host=allow_any_host,
+        )
         if FLATPAK:
             ui_run(native, show, host, port)
         else:

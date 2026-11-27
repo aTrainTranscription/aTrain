@@ -1,12 +1,13 @@
-"""Unit tests for aTrain_core.globals' REQUIRED_MODELS_DIR resolution.
+"""Unit tests for aTrain_core.globals' REQUIRED_MODELS_DIR and EVENT_LOG_DIR resolution.
 
-The constant is computed at import time, so each test re-executes the module
+The constants are computed at import time, so each test re-executes the module
 body via importlib.reload with `files("aTrain")` pointed at an isolated temp
 dir. Torch- and NiceGUI-free, so they run in the lightweight `unit` CI job.
 """
 
 import importlib
 import importlib.resources
+import multiprocessing
 from pathlib import Path
 
 import aTrain_core.globals
@@ -49,6 +50,22 @@ def test_required_models_dir_falls_back_to_models_dir_when_missing(reload_global
     # must never be written to.
     module = reload_globals(tmp_path / "aTrain")
     assert module.REQUIRED_MODELS_DIR == module.MODELS_DIR
+
+
+def test_event_log_dir_in_a_flatpak_does_not_need_xdg_state_home(monkeypatch):
+    """Flatpak before 1.13.1 does not set XDG_STATE_HOME."""
+    monkeypatch.setenv("FLATPAK_ID", "org.example.App")
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    # With FLATPAK_ID set, aTrain_core.globals would set the start method of this
+    # test process to spawn.
+    monkeypatch.setattr(multiprocessing, "set_start_method", lambda *args, **kwargs: None)
+    try:
+        module = importlib.reload(aTrain_core.globals)
+        expected = Path.home() / ".var/app/org.example.App/.local/state/aTrain/log"
+        assert expected == module.EVENT_LOG_DIR
+    finally:
+        monkeypatch.undo()
+        importlib.reload(aTrain_core.globals)
 
 
 @pytest.fixture

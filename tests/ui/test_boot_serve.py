@@ -67,4 +67,4 @@ def test_app_boots_and_serves(tmp_path):
 
     if sys.platform == "linux":  # XDG_STATE_HOME moves the log on Linux only
         log = (tmp_path / "aTrain" / "log" / "atrain.log").read_text(encoding="utf-8")
-        assert "server_started" in log and "server_stopped" in log, log
+        assert "server_starting" in log and "server_stopped" in log, log
