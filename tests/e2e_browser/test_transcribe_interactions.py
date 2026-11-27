@@ -59,6 +59,7 @@ def test_select_file_button_opens_file_chooser(atrain_server: str, page: Page) -
         """
     )
     page.goto(atrain_server)
+    expect(page.get_by_role("button", name="Select File")).to_be_visible(timeout=60_000)
     with page.expect_file_chooser(timeout=5000) as chooser:
         page.get_by_role("button", name="Select File").click()
     assert page.evaluate("window.__fileInputClickedDuring") == "click"
