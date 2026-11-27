@@ -5,7 +5,6 @@ from enum import StrEnum, auto
 from importlib.resources import files
 from multiprocessing.managers import DictProxy
 from pathlib import Path
-from typing import BinaryIO
 
 from .load_resources import load_model_config_file
 
@@ -33,7 +32,7 @@ class ModelKey:
 
 @dataclass
 class Settings:
-    file: Path | BinaryIO
+    file: Path
     file_id: str
     file_name: str
     model: str
@@ -47,6 +46,11 @@ class Settings:
     initial_prompt: str | None = None
     progress: dict | DictProxy = field(default_factory=dict)
     cpu_threads: int = 0
+
+    def __post_init__(self):
+        # GPU work gets these settings in a spawned child process, so they must be
+        # picklable. Path() rejects open file objects with a TypeError.
+        self.file = Path(self.file)
 
 
 def check_inputs_transcribe(file, model, language, device):

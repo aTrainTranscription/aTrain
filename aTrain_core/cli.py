@@ -52,7 +52,7 @@ def transcribe(
     ] = DEFAULT_CPU_THREADS,
 ):
     """Start transcription process for an audio file"""
-    file, file_id, timestamp = prepare_transcription(file=file)
+    _, file_id, timestamp = prepare_transcription(file=file)
     try:
         check_inputs_transcribe(file, model, language, device)
         settings = Settings(
